@@ -100,23 +100,10 @@ fn vm_create() {
 		let layout: Layout = Layout::from_size_align(capacity, 4096).unwrap();
 		let mem_raw = alloc(layout);
 
-		//let mut mem = Vec::with_capacity(capacity);
-		//mem.extend(repeat(0).take(capacity));
-
 		println!("allocating memory at {:?}", mem_raw);
 		//map the vec at address 0
 		let mem = slice::from_raw_parts_mut(mem_raw, capacity);
 		map_mem(mem, 0, &MemPerm::ExecAndWrite).unwrap();
-
-		/*res = hv_vm_map(mem_raw as *mut c_void, 0, capacity,
-		  Enum_Unnamed4::HV_MEMORY_READ as u64  |
-		  Enum_Unnamed4::HV_MEMORY_WRITE as u64 |
-		  Enum_Unnamed4::HV_MEMORY_EXEC as u64);
-		if res != 0 {
-		  panic!("vm map res: {}", res);
-		}
-
-		let mem = slice::from_raw_parts_mut(mem_raw, capacity);*/
 
 		let mut vcpu: hv_vcpuid_t = 0;
 
@@ -283,12 +270,12 @@ fn vm_create() {
 					println!("unrecognized IO port, exit");
 					break;
 				}
-				/*
-				let rax = rreg(vcpu, hv_x86_reg_t::HV_X86_RAX);
-				println!("RAX == {}", rax);
-				let rdx = rreg(vcpu, hv_x86_reg_t::HV_X86_RDX);
-				println!("RDX == {}", rdx);
-				//println!("address 0x3f8: {:?}", &mem[0x3f8..0x408]);
+
+				/*let rax = rreg(vcpu, x86Reg::RAX);
+				println!("RAX == 0x{:x}", rax);
+				let rdx = rreg(vcpu, x86Reg::RDX);
+				println!("RDX == 0x{:x}", rdx);
+				println!("address 0x3f8: {:?}", &mem[0x3f8..0x408]);
 				println!("qual: {}", qual);
 				let size = qual >> 62;
 				println!("size: {}", size);
@@ -296,8 +283,7 @@ fn vm_create() {
 				println!("direction (0=out): {}, {}", direction, qual & 0x8);
 				let string = (qual << 4)    >> 63;
 				println!("string (1=string): {}, {}", string, qual &0x10);
-				println!("port: {}", (qual >> 16) & 0xFFFF);
-				*/
+				println!("port: {}", (qual >> 16) & 0xFFFF);*/
 			}
 		}
 

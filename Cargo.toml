@@ -1,5 +1,5 @@
 [package]
-name = "hypervisor"
+name = "xhypervisor"
 version = "0.0.9"
 authors = ["Stefan Lankes", "Saurav Sachidanand"]
 

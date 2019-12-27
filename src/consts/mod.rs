@@ -22,9 +22,9 @@ THE SOFTWARE.
 
 //! Some useful constants
 
+pub mod irq;
 pub mod vmcs;
 pub mod vmx_cap;
 pub mod vmx_exit;
-pub mod irq;
 
-pub const VMX_BASIC_TRUE_CTLS: u64= 1 << 55;
+pub const VMX_BASIC_TRUE_CTLS: u64 = 1 << 55;

@@ -1,11 +1,11 @@
 [package]
 name = "hypervisor"
-version = "0.0.8"
-authors = ["Saurav Sachidanand <sauravsachidanand@gmail.com>"]
+version = "0.0.9"
+authors = ["Stefan Lankes", "Saurav Sachidanand"]
 
 license = "MIT"
-repository = "https://www.github.com/saurvs/hypervisor-rs"
-documentation = "https://saurvs.github.io/hypervisor-rs"
+repository = "https://www.github.com/RWTH-OS/xhypervisor"
+documentation = "https://saurvs.github.io/xhypervisor"
 
 description = " Hardware-accelerated virtualization on OS X"
 keywords = ["hypervisor", "virtualization", "osx", "x86", "VT-x"]
@@ -13,4 +13,4 @@ keywords = ["hypervisor", "virtualization", "osx", "x86", "VT-x"]
 build = "build.rs"
 
 [dependencies]
-libc = "0.2.11"
+libc = "0.2.66"

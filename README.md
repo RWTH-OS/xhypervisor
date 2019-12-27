@@ -1,11 +1,9 @@
-# hypervisor-rs [![](http://meritbadge.herokuapp.com/hypervisor)](https://crates.io/crates/hypervisor) [![](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/saurvs/hypervisor-rs/blob/master/LICENSE.md)
+# xhypervisor
 
-`hypervisor` is a Rust library that taps into functionality that enables hardware-accelerated execution of
-virtual machines on OS X.
+`xhypervisor` is a Rust library that taps into functionality that enables hardware-accelerated execution of virtual machines on OS X.
+It is a fork of [hypervisor-rs](https://github.com/saurvs/hypervisor-rs) and modified for the development of [ehyve](https://github.com/RWTH-OS/ehyve)
 
 It binds to the [Hypervisor](https://developer.apple.com/documentation/hypervisor) framework on OS X, and exposes a safe Rust interface through the `hypervisor` module, and an unsafe foreign function interface through the `hypervisor::ffi` module.
-
-[Documentation](https://saurvs.github.io/hypervisor-rs/)
 
 ## Prerequisites
 

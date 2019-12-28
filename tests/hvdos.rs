@@ -11,71 +11,22 @@ use xhypervisor::consts::vmx_exit::*;
 use xhypervisor::ffi::*;
 use xhypervisor::*;
 
-pub fn rreg(vcpu: hv_vcpuid_t, reg: x86Reg) -> u64 {
-	let mut v: u64 = 0;
-
-	unsafe {
-		let res = hv_vcpu_read_register(vcpu, reg, &mut v);
-		if res != 0 {
-			panic!("rreg res: {}", res);
-		}
-	}
-	return v;
-}
-
-/* write GPR */
-pub fn wreg(vcpu: hv_vcpuid_t, reg: x86Reg, v: u64) {
-	unsafe {
-		let res = hv_vcpu_write_register(vcpu, reg, v);
-		if res != 0 {
-			panic!("wreg res: {}", res);
-		}
-	}
-}
-
-/* read VMCS field */
-pub fn rvmcs(vcpu: hv_vcpuid_t, field: u32) -> u64 {
-	let mut v: u64 = 0;
-
-	unsafe {
-		let res = hv_vmx_vcpu_read_vmcs(vcpu, field, &mut v);
-		if res != 0 {
-			panic!("rvcms res: {}", res);
-		}
-	}
-
-	return v;
-}
-
-/* write VMCS field */
-pub fn wvmcs(vcpu: hv_vcpuid_t, field: u32, v: u64) {
-	unsafe {
-		let res = hv_vmx_vcpu_write_vmcs(vcpu, field, v);
-		if res != 0 {
-			panic!("wvcms res: {}", res);
-		}
-	}
-}
-
 /* desired control word constrained by hardware/hypervisor capabilities */
-pub fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
+fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
 	(ctrl | (cap & 0xffffffff)) & (cap >> 32)
 }
 
 #[test]
 fn vm_create() {
 	unsafe {
-		let mut res = hv_vm_create(HV_VM_DEFAULT as u64);
-		if res != 0 {
-			panic!("vm create res: {}", res);
-		}
+		create_vm().unwrap();
 
 		let mut vmx_cap_pinbased: u64 = 0;
 		let mut vmx_cap_procbased: u64 = 0;
 		let mut vmx_cap_procbased2: u64 = 0;
 		let mut vmx_cap_entry: u64 = 0;
 
-		res = hv_vmx_read_capability(VMXCap::PINBASED, &mut vmx_cap_pinbased);
+		let mut res = hv_vmx_read_capability(VMXCap::PINBASED, &mut vmx_cap_pinbased);
 		if res != 0 {
 			panic!("vmx read capability res: {}", res);
 		}
@@ -105,100 +56,84 @@ fn vm_create() {
 		let mem = slice::from_raw_parts_mut(mem_raw, capacity);
 		map_mem(mem, 0, &MemPerm::ExecAndWrite).unwrap();
 
-		let mut vcpu: hv_vcpuid_t = 0;
-
-		res = hv_vcpu_create(&mut vcpu, HV_VCPU_DEFAULT as u64);
-		if res != 0 {
-			panic!("vcpu create res: {}", res);
-		}
-
-		println!("vcpu id: {}", vcpu);
+		let vcpu = vCPU::new().unwrap();
 
 		const VMCS_PRI_PROC_BASED_CTLS_HLT: u64 = 1 << 7;
 		const VMCS_PRI_PROC_BASED_CTLS_CR8_LOAD: u64 = 1 << 19;
 		const VMCS_PRI_PROC_BASED_CTLS_CR8_STORE: u64 = 1 << 20;
 
 		/* set VMCS control fields */
-		wvmcs(
-			vcpu,
-			VMCS_CTRL_PIN_BASED as u32,
-			cap2ctrl(vmx_cap_pinbased, 0),
-		);
-		wvmcs(
-			vcpu,
-			VMCS_CTRL_CPU_BASED as u32,
+		vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0))
+			.unwrap();
+		vcpu.write_vmcs(
+			VMCS_CTRL_CPU_BASED,
 			cap2ctrl(
 				vmx_cap_procbased,
 				VMCS_PRI_PROC_BASED_CTLS_HLT
 					| VMCS_PRI_PROC_BASED_CTLS_CR8_LOAD
 					| VMCS_PRI_PROC_BASED_CTLS_CR8_STORE,
 			),
-		);
-		wvmcs(
-			vcpu,
-			VMCS_CTRL_CPU_BASED2 as u32,
-			cap2ctrl(vmx_cap_procbased2, 0),
-		);
-		wvmcs(
-			vcpu,
-			VMCS_CTRL_VMENTRY_CONTROLS as u32,
-			cap2ctrl(vmx_cap_entry, 0),
-		);
-		wvmcs(vcpu, VMCS_CTRL_EXC_BITMAP as u32, 0xffffffff);
-		wvmcs(vcpu, VMCS_CTRL_CR0_MASK as u32, 0x60000000);
-		wvmcs(vcpu, VMCS_CTRL_CR0_SHADOW as u32, 0);
-		wvmcs(vcpu, VMCS_CTRL_CR4_MASK as u32, 0);
-		wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW as u32, 0);
+		)
+		.unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_CPU_BASED2, cap2ctrl(vmx_cap_procbased2, 0))
+			.unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_VMENTRY_CONTROLS, cap2ctrl(vmx_cap_entry, 0))
+			.unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_EXC_BITMAP, 0xffffffff).unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_CR0_MASK, 0x60000000).unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_CR0_SHADOW, 0).unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_CR4_MASK, 0).unwrap();
+		vcpu.write_vmcs(VMCS_CTRL_CR4_SHADOW, 0).unwrap();
 		/* set VMCS guest state fields */
-		wvmcs(vcpu, VMCS_GUEST_CS as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_CS_LIMIT as u32, 0xffff);
-		wvmcs(vcpu, VMCS_GUEST_CS_AR as u32, 0x9b);
-		wvmcs(vcpu, VMCS_GUEST_CS_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_CS, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_CS_LIMIT, 0xffff).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_CS_AR, 0x9b).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_CS_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_DS as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_DS_LIMIT as u32, 0xffff);
-		wvmcs(vcpu, VMCS_GUEST_DS_AR as u32, 0x93);
-		wvmcs(vcpu, VMCS_GUEST_DS_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_DS, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_DS_LIMIT, 0xffff).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_DS_AR, 0x93).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_DS_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_ES as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_ES_LIMIT as u32, 0xffff);
-		wvmcs(vcpu, VMCS_GUEST_ES_AR as u32, 0x93);
-		wvmcs(vcpu, VMCS_GUEST_ES_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_ES, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_ES_LIMIT, 0xffff).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_ES_AR, 0x93).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_ES_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_FS as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_FS_LIMIT as u32, 0xffff);
-		wvmcs(vcpu, VMCS_GUEST_FS_AR as u32, 0x93);
-		wvmcs(vcpu, VMCS_GUEST_FS_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_FS, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_FS_LIMIT, 0xffff).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_FS_AR, 0x93).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_FS_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_GS as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_GS_LIMIT as u32, 0xffff);
-		wvmcs(vcpu, VMCS_GUEST_GS_AR as u32, 0x93);
-		wvmcs(vcpu, VMCS_GUEST_GS_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_GS, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_GS_LIMIT, 0xffff).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_GS_AR, 0x93).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_GS_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_SS as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_SS_LIMIT as u32, 0xffff);
-		wvmcs(vcpu, VMCS_GUEST_SS_AR as u32, 0x93);
-		wvmcs(vcpu, VMCS_GUEST_SS_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_SS, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_SS_LIMIT, 0xffff).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_SS_AR, 0x93).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_SS_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_LDTR as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_LDTR_LIMIT as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_LDTR_AR as u32, 0x10000);
-		wvmcs(vcpu, VMCS_GUEST_LDTR_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_LDTR, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_LDTR_LIMIT, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_LDTR_AR, 0x10000).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_LDTR_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_TR as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_TR_LIMIT as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_TR_AR as u32, 0x83);
-		wvmcs(vcpu, VMCS_GUEST_TR_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_TR, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_TR_LIMIT, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_TR_AR, 0x83).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_TR_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_GDTR_LIMIT as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_GDTR_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_GDTR_LIMIT, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_GDTR_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_IDTR_LIMIT as u32, 0);
-		wvmcs(vcpu, VMCS_GUEST_IDTR_BASE as u32, 0);
+		vcpu.write_vmcs(VMCS_GUEST_IDTR_LIMIT, 0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_IDTR_BASE, 0).unwrap();
 
-		wvmcs(vcpu, VMCS_GUEST_CR0 as u32, 0x20);
-		wvmcs(vcpu, VMCS_GUEST_CR3 as u32, 0x0);
-		wvmcs(vcpu, VMCS_GUEST_CR4 as u32, 0x2000);
+		vcpu.write_vmcs(VMCS_GUEST_CR0, 0x20).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_CR3, 0x0).unwrap();
+		vcpu.write_vmcs(VMCS_GUEST_CR4, 0x2000).unwrap();
 
 		let code: Vec<u8> = vec![
 			0xba, 0xf8, 0x03, /* mov $0x3f8, %dx */
@@ -214,26 +149,22 @@ fn vm_create() {
 		let _ = (&mut mem[256..]).write(&code);
 
 		/* set up GPRs, start at adress 0x100 */
-		wreg(vcpu, x86Reg::RIP, 0x100);
+		vcpu.write_register(&x86Reg::RIP, 0x100).unwrap();
 
-		wreg(vcpu, x86Reg::RFLAGS, 0x2);
-		wreg(vcpu, x86Reg::RSP, 0x0);
+		vcpu.write_register(&x86Reg::RFLAGS, 0x2).unwrap();
+		vcpu.write_register(&x86Reg::RSP, 0x0).unwrap();
 
 		/* set up args for addition */
-		wreg(vcpu, x86Reg::RAX, 0x5);
-		wreg(vcpu, x86Reg::RBX, 0x3);
+		vcpu.write_register(&x86Reg::RAX, 0x5).unwrap();
+		vcpu.write_register(&x86Reg::RBX, 0x3).unwrap();
 
 		let mut chars = 0u8;
 		loop {
-			let run_res = hv_vcpu_run(vcpu);
-			if run_res != 0 {
-				panic!("vcpu run res: {}", run_res);
-			}
-
-			let exit_reason = rvmcs(vcpu, VMCS_RO_EXIT_REASON as u32);
+			vcpu.run().unwrap();
+			let exit_reason = vcpu.read_vmcs(VMCS_RO_EXIT_REASON).unwrap() & 0xffff;
 			println!("exit reason: {}", exit_reason);
 
-			let rip = rreg(vcpu, x86Reg::RIP);
+			let rip = vcpu.read_register(&x86Reg::RIP).unwrap();
 			println!("RIP at {}", rip);
 
 			if exit_reason == VMX_REASON_IRQ as u64 {
@@ -249,9 +180,9 @@ fn vm_create() {
 				if chars > 2 {
 					panic!("the guest code should not return more than 2 chars on the serial port");
 				}
-				let qual = rvmcs(vcpu, VMCS_RO_EXIT_QUALIFIC as u32);
+				let qual = vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC).unwrap();
 				if (qual >> 16) & 0xFFFF == 0x3F8 {
-					let rax = rreg(vcpu, x86Reg::RAX);
+					let rax = vcpu.read_register(&x86Reg::RAX).unwrap();
 					println!("RAX == {}", rax);
 					println!("got char: {}", (rax as u8) as char);
 
@@ -263,17 +194,18 @@ fn vm_create() {
 					}
 					chars += 1;
 
-					let inst_length = rvmcs(vcpu, VMCS_RO_VMEXIT_INSTR_LEN as u32);
+					let inst_length = vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN).unwrap();
 
-					wreg(vcpu, x86Reg::RIP, rip + inst_length);
+					vcpu.write_register(&x86Reg::RIP, rip + inst_length)
+						.unwrap();
 				} else {
 					println!("unrecognized IO port, exit");
 					break;
 				}
 
-				/*let rax = rreg(vcpu, x86Reg::RAX);
+				/*let rax = vcpu.read_register(&x86Reg::RAX).unwrap();
 				println!("RAX == 0x{:x}", rax);
-				let rdx = rreg(vcpu, x86Reg::RDX);
+				let rdx = vcpu.read_register(&x86Reg::RDX).unwrap();
 				println!("RDX == 0x{:x}", rdx);
 				println!("address 0x3f8: {:?}", &mem[0x3f8..0x408]);
 				println!("qual: {}", qual);
@@ -287,17 +219,9 @@ fn vm_create() {
 			}
 		}
 
-		res = hv_vcpu_destroy(vcpu);
-		if res != 0 {
-			panic!("vcpu destroy res: {}", res);
-		}
-		res = hv_vm_unmap(0, mem.len());
-		if res != 0 {
-			panic!("vm unmap res: {}", res);
-		}
+		drop(vcpu);
+		unmap_mem(0, mem.len()).unwrap();
 
 		dealloc(mem_raw, layout);
 	}
-
-	//assert!(false);
 }

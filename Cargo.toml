@@ -1,10 +1,11 @@
 [package]
 name = "xhypervisor"
-version = "0.0.9"
+version = "0.0.10"
 authors = ["Stefan Lankes", "Saurav Sachidanand"]
 
 license = "MIT"
 repository = "https://www.github.com/RWTH-OS/xhypervisor"
+documentation = "https://docs.rs/xhypervisor/"
 readme = "README.md"
 description = " Hardware-accelerated virtualization on OS X"
 keywords = ["hypervisor", "virtualization", "osx", "x86", "VT-x"]

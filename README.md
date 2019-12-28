@@ -5,6 +5,8 @@ It is a fork of [hypervisor-rs](https://github.com/saurvs/hypervisor-rs) and mod
 
 It binds to the [Hypervisor](https://developer.apple.com/documentation/hypervisor) framework on OS X, and exposes a safe Rust interface through the `hypervisor` module, and an unsafe foreign function interface through the `hypervisor::ffi` module.
 
+A hypervisor derived from the [16 bits VM](https://github.com/mist64/hvdos/blob/master/hvdos.c) is used as test example, which was original published in blog post [http://www.pagetable.com/?p=764](http://www.pagetable.com/?p=764).
+
 ## Prerequisites
 
 To use this library, you need

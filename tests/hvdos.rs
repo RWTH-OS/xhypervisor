@@ -7,6 +7,7 @@ use std::alloc::{alloc, dealloc, Layout};
 use std::io::Write;
 use std::slice;
 use xhypervisor::consts::vmcs::*;
+use xhypervisor::consts::vmx_cap::*;
 use xhypervisor::consts::vmx_exit::*;
 use xhypervisor::ffi::*;
 use xhypervisor::*;
@@ -58,10 +59,6 @@ fn vm_create() {
 
 		let vcpu = vCPU::new().unwrap();
 
-		const VMCS_PRI_PROC_BASED_CTLS_HLT: u64 = 1 << 7;
-		const VMCS_PRI_PROC_BASED_CTLS_CR8_LOAD: u64 = 1 << 19;
-		const VMCS_PRI_PROC_BASED_CTLS_CR8_STORE: u64 = 1 << 20;
-
 		/* set VMCS control fields */
 		vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0))
 			.unwrap();
@@ -69,9 +66,7 @@ fn vm_create() {
 			VMCS_CTRL_CPU_BASED,
 			cap2ctrl(
 				vmx_cap_procbased,
-				VMCS_PRI_PROC_BASED_CTLS_HLT
-					| VMCS_PRI_PROC_BASED_CTLS_CR8_LOAD
-					| VMCS_PRI_PROC_BASED_CTLS_CR8_STORE,
+				CPU_BASED_HLT | CPU_BASED_CR8_LOAD | CPU_BASED_CR8_STORE,
 			),
 		)
 		.unwrap();

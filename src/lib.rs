@@ -166,7 +166,7 @@ pub fn protect_mem(gpa: u64, size: usize, mem_perm: &MemPerm) -> Result<(), Erro
 ///
 /// * `tsc` Guest TSC value
 pub fn sync_tsc(tsc: u64) -> Result<(), Error> {
-	match_error_code(unsafe { hv_vm_sync_tsc(tsc as u64) })
+	match_error_code(unsafe { hv_vm_sync_tsc(tsc) })
 }
 
 /// Forces an immediate VMEXIT of a set of vCPUs
@@ -273,7 +273,7 @@ impl vCPU {
 
 		let _error = match_error_code(unsafe { hv_vcpu_get_exec_time(self.id, &mut exec_time) })?;
 
-		Ok(exec_time as u64)
+		Ok(exec_time)
 	}
 
 	/// Forces flushing of cached vCPU state
@@ -289,7 +289,7 @@ impl vCPU {
 	/// Enables an MSR to be used natively by the VM
 	pub fn enable_native_msr(&self, msr: u32, enable: bool) -> Result<(), Error> {
 		match_error_code(unsafe {
-			hv_vcpu_enable_native_msr(self.id as hv_vcpuid_t, msr as u32, enable)
+			hv_vcpu_enable_native_msr(self.id as hv_vcpuid_t, msr, enable)
 		})
 	}
 
@@ -298,16 +298,16 @@ impl vCPU {
 		let mut value: u64 = 0;
 
 		let _error = match_error_code(unsafe {
-			hv_vcpu_read_msr(self.id as hv_vcpuid_t, msr as u32, &mut value)
+			hv_vcpu_read_msr(self.id as hv_vcpuid_t, msr, &mut value)
 		})?;
 
-		Ok(value as u64)
+		Ok(value)
 	}
 
 	/// Set the value of an MSR of the vCPU
 	pub fn write_msr(&self, msr: u32, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe {
-			hv_vcpu_write_msr(self.id as hv_vcpuid_t, msr as u32, &(value as u64))
+			hv_vcpu_write_msr(self.id as hv_vcpuid_t, msr, &(value))
 		})
 	}
 
@@ -320,13 +320,13 @@ impl vCPU {
 			hv_vcpu_read_register(self.id as hv_vcpuid_t, (*reg).clone(), &mut value)
 		})?;
 
-		Ok(value as u64)
+		Ok(value)
 	}
 
 	/// Sets the value of an architectural x86 register of the vCPU
 	pub fn write_register(&self, reg: &x86Reg, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe {
-			hv_vcpu_write_register(self.id as hv_vcpuid_t, (*reg).clone(), value as u64)
+			hv_vcpu_write_register(self.id as hv_vcpuid_t, (*reg).clone(), value)
 		})
 	}
 
@@ -335,16 +335,16 @@ impl vCPU {
 		let mut value: u64 = 0;
 
 		match_error_code(unsafe {
-			hv_vmx_vcpu_read_vmcs(self.id as hv_vcpuid_t, field as u32, &mut value)
+			hv_vmx_vcpu_read_vmcs(self.id as hv_vcpuid_t, field, &mut value)
 		})?;
 
-		Ok(value as u64)
+		Ok(value)
 	}
 
 	/// Sets the value of a VMCS field of the vCPU
 	pub fn write_vmcs(&self, field: u32, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe {
-			hv_vmx_vcpu_write_vmcs(self.id as hv_vcpuid_t, field as u32, value as u64)
+			hv_vmx_vcpu_write_vmcs(self.id as hv_vcpuid_t, field, value)
 		})
 	}
 
@@ -352,7 +352,7 @@ impl vCPU {
 	/// guest physical address space of the VM
 	pub fn set_apic_addr(&self, gpa: u64) -> Result<(), Error> {
 		match_error_code(unsafe {
-			hv_vmx_vcpu_set_apic_address(self.id as hv_vcpuid_t, gpa as u64)
+			hv_vmx_vcpu_set_apic_address(self.id as hv_vcpuid_t, gpa)
 		})
 	}
 
@@ -410,7 +410,7 @@ pub fn read_vmx_cap(vmx_cap: &VMXCap) -> Result<u64, Error> {
 
 	match_error_code(unsafe { hv_vmx_read_capability((*vmx_cap).clone(), &mut value) })?;
 
-	Ok(value as u64)
+	Ok(value)
 }
 
 impl fmt::Display for VMXCap {

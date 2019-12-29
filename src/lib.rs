@@ -25,8 +25,8 @@ This is a Rust library that taps into functionality that enables
 hardware-accelerated execution of virtual machines on OS X.
 
 It binds to the `Hypervisor` framework on OS X, and exposes a safe Rust
-interface through the `hypervisor` module, and an unsafe foreign function
-interface through the `hypervisor::ffi` module.
+interface through the `xhypervisor` module, and an unsafe foreign function
+interface through the `xhypervisor::ffi` module.
 
 To use this library, you need
 

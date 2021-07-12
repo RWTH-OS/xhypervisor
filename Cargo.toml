@@ -13,4 +13,4 @@ keywords = ["hypervisor", "virtualization", "osx", "x86", "VT-x"]
 build = "build.rs"
 
 [dependencies]
-libc = "0.2.66"
+libc = "0.2"

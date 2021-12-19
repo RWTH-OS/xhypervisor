@@ -49,10 +49,10 @@ extern crate libc;
 pub mod consts;
 #[cfg(target_arch = "aarch64")]
 #[allow(non_camel_case_types)]
-pub mod ffi_aarch64;
+pub mod aarch64;
 #[cfg(target_arch = "x86_64")]
 #[allow(non_camel_case_types)]
-pub mod ffi_x86;
+pub mod x86_64;
 
 use std::ptr::null_mut;
 
@@ -60,14 +60,9 @@ use self::core::fmt;
 use libc::*;
 
 #[cfg(target_arch = "aarch64")]
-use self::ffi_aarch64::*;
+use self::aarch64::*;
 #[cfg(target_arch = "x86_64")]
-use self::ffi_x86::*;
-
-#[cfg(target_arch = "aarch64")]
-pub mod aarch64;
-#[cfg(target_arch = "x86_64")]
-pub mod x86_64;
+use self::x86_64::*;
 
 /// Error returned after every call
 #[derive(Clone)]

@@ -5,6 +5,7 @@
 
 `xhypervisor` is a Rust library that taps into functionality that enables hardware-accelerated execution of virtual machines on OS X.
 It is a fork of [hypervisor-rs](https://github.com/saurvs/hypervisor-rs) and modified for the development of [uhyve](https://github.com/hermitcore/uhyve) and [ehyve](https://github.com/RWTH-OS/ehyve).
+Derived from [ahv](https://github.com/Thog/ahv), we added the support of Apple's Hypervisor Framework on Apple Silicon.
 
 It binds to the [Hypervisor](https://developer.apple.com/documentation/hypervisor) framework on OS X, and exposes a safe Rust interface through the `hypervisor` module, and an unsafe foreign function interface through the `xhypervisor::ffi` module.
 
@@ -26,7 +27,8 @@ following in your Terminal:
 
 ## Status
 - [x] Accessing x86 registers
-- [x] Accessing model-specific registers (MSRs)
+- [x] Accessing aarch64 registers
+- [x] x86: Accessing model-specific registers (MSRs)
 - [x] Mapping guest physical memory segments into guest physical address space
 - [x] Virtual CPUs
   - [x] Executing and interrupting
@@ -35,4 +37,4 @@ following in your Terminal:
   - [x] Accessing floating point (FP) and SIMD state
   - [x] Obtaining cumulative execution time
   - [x] Synchronizing guest timestamp-counters (TSC)
-- [x] Accessing fields of Virtual Machine Control Structures (VMCS)
+- [x] x86: Accessing fields of Virtual Machine Control Structures (VMCS)

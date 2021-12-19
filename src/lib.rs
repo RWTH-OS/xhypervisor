@@ -46,10 +46,10 @@ in your Terminal:
 extern crate core;
 extern crate libc;
 
-pub mod consts;
 #[cfg(target_arch = "aarch64")]
 #[allow(non_camel_case_types)]
 pub mod aarch64;
+pub mod consts;
 #[cfg(target_arch = "x86_64")]
 #[allow(non_camel_case_types)]
 pub mod x86_64;
@@ -596,9 +596,7 @@ impl VirtualCpu {
 	pub fn read_register(&self, reg: &Register) -> Result<u64, Error> {
 		let mut value: u64 = 0;
 
-		match_error_code(unsafe {
-			hv_vcpu_read_register(self.id, (*reg).clone(), &mut value)
-		})?;
+		match_error_code(unsafe { hv_vcpu_read_register(self.id, (*reg).clone(), &mut value) })?;
 
 		Ok(value)
 	}

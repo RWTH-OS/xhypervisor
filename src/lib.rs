@@ -211,7 +211,7 @@ pub fn protect_mem(ipa: u64, size: usize, mem_perm: &MemPerm) -> Result<(), Erro
 	})
 }
 
-/// Synchronizes the guest Timestamp-Counters (TSC) across all vCPUs
+/// Synchronizes the guest Timestamp-Counters (TSC) across all VirtualCpus
 ///
 /// * `tsc` Guest TSC value
 #[cfg(target_arch = "x86_64")]
@@ -219,9 +219,9 @@ pub fn sync_tsc(tsc: u64) -> Result<(), Error> {
 	match_error_code(unsafe { hv_vm_sync_tsc(tsc) })
 }
 
-/// Forces an immediate VMEXIT of a set of vCPUs
+/// Forces an immediate VMEXIT of a set of VirtualCpus
 ///
-/// * `vcpu_ids` Array of vCPU IDs
+/// * `VirtualCpu_ids` Array of VirtualCpu IDs
 #[cfg(target_arch = "x86_64")]
 pub fn interrupt_vcpus(vcpu_ids: &[u32]) -> Result<(), Error> {
 	match_error_code(unsafe { hv_vcpu_interrupt(vcpu_ids.as_ptr(), vcpu_ids.len() as c_uint) })
@@ -229,11 +229,10 @@ pub fn interrupt_vcpus(vcpu_ids: &[u32]) -> Result<(), Error> {
 
 #[cfg(target_arch = "aarch64")]
 #[derive(Copy, Clone, Debug)]
-#[allow(non_camel_case_types)]
 /// Exit reason of a virtual CPU
 /// Enum is derived from
 /// https://github.com/Thog/ahv
-pub enum vCpuExitReason {
+pub enum VirtualCpuExitReason {
 	/// Asynchronous exit.
 	Cancelled,
 
@@ -251,25 +250,24 @@ pub enum vCpuExitReason {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl From<hv_vcpu_exit_t> for vCpuExitReason {
-	fn from(value: hv_vcpu_exit_t) -> vCpuExitReason {
+impl From<hv_vcpu_exit_t> for VirtualCpuExitReason {
+	fn from(value: hv_vcpu_exit_t) -> VirtualCpuExitReason {
 		match value.reason {
-			HV_EXIT_REASON_CANCELED => vCpuExitReason::Cancelled,
-			HV_EXIT_REASON_EXCEPTION => vCpuExitReason::Exception {
+			HV_EXIT_REASON_CANCELED => VirtualCpuExitReason::Cancelled,
+			HV_EXIT_REASON_EXCEPTION => VirtualCpuExitReason::Exception {
 				exception: value.exception,
 			},
-			HV_EXIT_REASON_VTIMER_ACTIVATED => vCpuExitReason::VTimerActivated,
-			HV_EXIT_REASON_UNKNOWN => vCpuExitReason::Unknown,
+			HV_EXIT_REASON_VTIMER_ACTIVATED => VirtualCpuExitReason::VTimerActivated,
+			HV_EXIT_REASON_UNKNOWN => VirtualCpuExitReason::Unknown,
 
 			// Unexpected unknown
-			_ => vCpuExitReason::Unknown,
+			_ => VirtualCpuExitReason::Unknown,
 		}
 	}
 }
 
 /// Virtual CPU
-#[allow(non_camel_case_types)]
-pub struct vCPU {
+pub struct VirtualCpu {
 	#[cfg(target_arch = "x86_64")]
 	/// Virtual CPU handle
 	id: hv_vcpuid_t,
@@ -279,13 +277,12 @@ pub struct vCPU {
 	id: hv_vcpu_t,
 
 	#[cfg(target_arch = "aarch64")]
-	/// vCPU exit informations.
+	/// VirtualCPU exit informations.
 	vcpu_exit: *const hv_vcpu_exit_t,
 }
 
 /// aarch64 architectural register
 #[cfg(target_arch = "aarch64")]
-#[allow(non_camel_case_types)]
 pub enum Register {
 	/// X0 register.
 	X0,
@@ -446,7 +443,6 @@ impl From<Register> for hv_reg_t {
 
 /// x86 architectural register
 #[cfg(target_arch = "x86_64")]
-#[allow(non_camel_case_types)]
 #[derive(Clone)]
 #[repr(C)]
 pub enum Register {
@@ -504,53 +500,53 @@ pub enum Register {
 	REGISTERS_MAX,
 }
 
-impl vCPU {
-	/// Creates a vCPU instance for the current thread
+impl VirtualCpu {
+	/// Creates a VirtualCpu instance for the current thread
 	#[cfg(target_arch = "x86_64")]
-	pub fn new() -> Result<vCPU, Error> {
+	pub fn new() -> Result<VirtualCpu, Error> {
 		let mut vcpuid: hv_vcpuid_t = 0;
 
 		match_error_code(unsafe { hv_vcpu_create(&mut vcpuid, HV_VCPU_DEFAULT) })?;
 
-		Ok(vCPU { id: vcpuid })
+		Ok(VirtualCpu { id: vcpuid })
 	}
 
 	#[cfg(target_arch = "aarch64")]
-	pub fn new() -> Result<vCPU, Error> {
+	pub fn new() -> Result<VirtualCpu, Error> {
 		let handle: hv_vcpu_config_t = core::ptr::null_mut();
 		let mut vcpu_handle: hv_vcpu_t = 0;
 		let mut vcpu_exit: *const hv_vcpu_exit_t = core::ptr::null_mut();
 
-		match_error_code(unsafe { hv_vcpu_create(&mut vcpu_handle, &mut vcpu_exit, &handle) });
+		match_error_code(unsafe { hv_vcpu_create(&mut vcpu_handle, &mut vcpu_exit, &handle) })?;
 
-		Ok(vCPU {
+		Ok(VirtualCpu {
 			id: vcpu_handle,
 			vcpu_exit: vcpu_exit,
 		})
 	}
 
-	/// Destroys the vCPU instance associated with the current thread
+	/// Destroys the VirtualCpu instance associated with the current thread
 	pub fn destroy(&self) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_destroy(self.id) })
 	}
 
-	/// Executes the vCPU
+	/// Executes the VirtualCpu
 	pub fn run(&self) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_run(self.id) })
 	}
 
 	#[cfg(target_arch = "aarch64")]
-	pub fn exit_reason(&self) -> vCpuExitReason {
-		vCpuExitReason::from(unsafe { *self.vcpu_exit })
+	pub fn exit_reason(&self) -> VirtualCpuExitReason {
+		VirtualCpuExitReason::from(unsafe { *self.vcpu_exit })
 	}
 
-	/// Forces an immediate VMEXIT of the vCPU
+	/// Forces an immediate VMEXIT of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn interrupt(&self) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_interrupt(&(self.id), 1 as c_uint) })
 	}
 
-	/// Returns the cumulative execution time of the vCPU in nanoseconds
+	/// Returns the cumulative execution time of the VirtualCpu in nanoseconds
 	#[cfg(target_arch = "x86_64")]
 	pub fn exec_time(&self) -> Result<u64, Error> {
 		let mut exec_time: u64 = 0;
@@ -560,13 +556,13 @@ impl vCPU {
 		Ok(exec_time)
 	}
 
-	/// Forces flushing of cached vCPU state
+	/// Forces flushing of cached VirtualCpu state
 	#[cfg(target_arch = "x86_64")]
 	pub fn flush(&self) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_flush(self.id) })
 	}
 
-	/// Invalidates the translation lookaside buffer (TLB) of the vCPU
+	/// Invalidates the translation lookaside buffer (TLB) of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn invalidate_tlb(&self) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_invalidate_tlb(self.id) })
@@ -578,7 +574,7 @@ impl vCPU {
 		match_error_code(unsafe { hv_vcpu_enable_native_msr(self.id, msr, enable) })
 	}
 
-	/// Returns the current value of an MSR of the vCPU
+	/// Returns the current value of an MSR of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn read_msr(&self, msr: u32) -> Result<u64, Error> {
 		let mut value: u64 = 0;
@@ -588,27 +584,27 @@ impl vCPU {
 		Ok(value)
 	}
 
-	/// Set the value of an MSR of the vCPU
+	/// Set the value of an MSR of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn write_msr(&self, msr: u32, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_write_msr(self.id, msr, &(value)) })
 	}
 
 	/// Returns the current value of an architectural x86 register
-	/// of the vCPU
+	/// of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn read_register(&self, reg: &Register) -> Result<u64, Error> {
 		let mut value: u64 = 0;
 
 		match_error_code(unsafe {
-			hv_vcpu_read_register(self.id as hv_vcpuid_t, (*reg).clone(), &mut value)
+			hv_vcpu_read_register(self.id, (*reg).clone(), &mut value)
 		})?;
 
 		Ok(value)
 	}
 
 	/// Returns the current value of an architectural aarch64 register
-	/// of the vCPU
+	/// of the VirtualCpu
 	#[cfg(target_arch = "aarch64")]
 	pub fn read_register(&self, reg: Register) -> Result<u64, Error> {
 		let mut value: u64 = 0;
@@ -620,19 +616,19 @@ impl vCPU {
 		Ok(value)
 	}
 
-	/// Sets the value of an architectural x86 register of the vCPU
+	/// Sets the value of an architectural x86 register of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn write_register(&self, reg: &Register, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_write_register(self.id, (*reg).clone(), value) })
 	}
 
-	/// Sets the value of an architectural x86 register of the vCPU
+	/// Sets the value of an architectural x86 register of the VirtualCpu
 	#[cfg(target_arch = "aarch64")]
 	pub fn write_register(&self, reg: Register, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_set_reg(self.id, hv_reg_t::from(reg), value) })
 	}
 
-	/// Returns the current value of a VMCS field of the vCPU
+	/// Returns the current value of a VMCS field of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn read_vmcs(&self, field: u32) -> Result<u64, Error> {
 		let mut value: u64 = 0;
@@ -642,37 +638,37 @@ impl vCPU {
 		Ok(value)
 	}
 
-	/// Sets the value of a VMCS field of the vCPU
+	/// Sets the value of a VMCS field of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn write_vmcs(&self, field: u32, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vmx_vcpu_write_vmcs(self.id, field, value) })
 	}
 
-	/// Sets the address of the guest APIC for the vCPU in the
+	/// Sets the address of the guest APIC for the VirtualCpu in the
 	/// guest physical address space of the VM
 	#[cfg(target_arch = "x86_64")]
 	pub fn set_apic_addr(&self, gpa: u64) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vmx_vcpu_set_apic_address(self.id, gpa) })
 	}
 
-	/// Reads the current architectural x86 floating point and SIMD state of the vCPU
+	/// Reads the current architectural x86 floating point and SIMD state of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn read_fpstate(&self, buffer: &mut [u8]) -> Result<(), Error> {
 		match_error_code(unsafe {
 			hv_vcpu_read_fpstate(
-				self.id as hv_vcpuid_t,
+				self.id,
 				buffer.as_mut_ptr() as *mut c_void,
 				buffer.len() as size_t,
 			)
 		})
 	}
 
-	/// Sets the architectural x86 floating point and SIMD state of the vCPU
+	/// Sets the architectural x86 floating point and SIMD state of the VirtualCpu
 	#[cfg(target_arch = "x86_64")]
 	pub fn write_fpstate(&self, buffer: &[u8]) -> Result<(), Error> {
 		match_error_code(unsafe {
 			hv_vcpu_write_fpstate(
-				self.id as hv_vcpuid_t,
+				self.id,
 				buffer.as_ptr() as *const c_void,
 				buffer.len() as size_t,
 			)
@@ -680,9 +676,9 @@ impl vCPU {
 	}
 }
 
-impl fmt::Debug for vCPU {
+impl fmt::Debug for VirtualCpu {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "vCPU ID: {}", (*self).id)
+		write!(f, "VirtualCpu ID: {}", (*self).id)
 	}
 }
 

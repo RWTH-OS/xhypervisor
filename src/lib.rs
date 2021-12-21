@@ -45,6 +45,7 @@ in your Terminal:
 
 extern crate core;
 extern crate libc;
+extern crate thiserror;
 
 #[cfg(target_arch = "aarch64")]
 #[allow(non_camel_case_types)]
@@ -65,36 +66,22 @@ pub use aarch64::*;
 pub use x86_64::*;
 
 /// Error returned after every call
-#[derive(Clone)]
+#[derive(Error, Debug)]
 pub enum Error {
-	/// Success
+	#[error("success")]
 	Success,
-	/// Error
+	#[error("error")]
 	Error,
-	/// Busy
+	#[error("busy")]
 	Busy,
-	/// Bad argument
+	#[error("bad argument")]
 	BadArg,
-	/// No resources
+	#[error("no resource")]
 	NoRes,
-	/// No device
+	#[error("no device")]
 	NoDev,
-	/// Unsupported
+	#[error("unsupported")]
 	Unsupp,
-}
-
-impl fmt::Debug for Error {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match *self {
-			Error::Success => write!(f, "Success"),
-			Error::Error => write!(f, "Error"),
-			Error::Busy => write!(f, "Busy"),
-			Error::BadArg => write!(f, "Bad argument"),
-			Error::NoRes => write!(f, "No resources"),
-			Error::NoDev => write!(f, "No device"),
-			Error::Unsupp => write!(f, "Unsupported"),
-		}
-	}
 }
 
 // Returns an Error for a hv_return_t

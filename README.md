@@ -17,8 +17,7 @@ To use this library, you need
 
 * OS X Yosemite (10.10), or newer
 
-* an Intel processor with the VT-x feature set that includes Extended Page
-Tables (EPT) and the Unrestricted Mode. To verify this, run and expect the
+* a Intel processor with the VT-x feature or an Apple Silicon processor with virtualization support. To verify this, run and expect the
 following in your Terminal:
   ```shell
   $ sysctl kern.hv_support

@@ -2,6 +2,7 @@
 name = "xhypervisor"
 version = "0.2.0"
 authors = ["Stefan Lankes", "Saurav Sachidanand"]
+edition = "2021"
 
 license = "MIT"
 repository = "https://www.github.com/RWTH-OS/xhypervisor"

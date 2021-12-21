@@ -1,833 +1,756 @@
-//! Bindings to the Hypervisor Framework for arm64 targets.
+pub mod ffi;
 
-use core::ffi::c_void;
+use self::ffi::*;
+use crate::{match_MemPerm, match_error_code, Error, MemPerm};
+use libc::*;
+use std::ptr::null_mut;
 
-/// vCPU configuration.
-pub type hv_vcpu_config_t = *mut c_void;
-
-/// VM configuration.
-pub type hv_vm_config_t = *mut c_void;
-
-/// An opaque value that represents a vCPU instance.
-pub type hv_vcpu_t = u64;
-
-/// Events that can trigger a guest exit to the VM.
-pub type hv_exit_reason_t = u32;
-
-/// Type of a vCPU exception syndrome (Corresponds to ESR_EL2).
-pub type hv_exception_syndrome_t = u64;
-
-/// Type of a vCPU exception virtual address. (Corresponds to FAR_EL2).
-pub type hv_exception_address_t = u64;
-
-/// The type of an intermediate physical address (which is a guest physical address space of the VM).
-pub type hv_ipa_t = u64;
-
-/// Type of an ARM register.
-pub type hv_reg_t = u32;
-
-/// Type of an ARM SIMD & FP register.
-pub type hv_simd_fp_reg_t = u32;
-
-/// Type of an ARM system register.
-pub type hv_sys_reg_t = u16;
-
-/// Interrupt type.
-pub type hv_interrupt_type_t = u32;
-
-/// Cache type.
-pub type hv_cache_type_t = u32;
-
-//pub type hv_simd_fp_uchar16_t = core::arch::aarch64::uint8x16_t;
-
-/// Memory region permissions.
-pub type hv_memory_flags_t = u64;
-
-/// Hypervisor error codes.
-pub type hv_return_t = u32;
-
-/// Type of ARM feature register.
-pub type hv_feature_reg_t = u32;
-
-/// Contains details of a vCPU exception.
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct hv_vcpu_exit_exception_t {
-	/// The vCPU exception syndrome (Corresponds to ESR_EL2).
-	pub syndrome: hv_exception_syndrome_t,
-
-	/// The vCPU exception virtual address. (Corresponds to FAR_EL2).
-	pub virtual_address: hv_exception_address_t,
-
-	/// The vCPU exception physical address (host address).
-	pub physical_address: hv_ipa_t,
+/// Creates a VM instance for the current Mach task
+pub fn create_vm() -> Result<(), Error> {
+	match_error_code(unsafe { hv_vm_create(null_mut()) })
 }
 
-/// Information about an exit from the vCPU to the host.
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct hv_vcpu_exit_t {
-	/// The exit reason.
-	pub reason: hv_exit_reason_t,
-
-	/// The exit exception informations.
-	pub exception: hv_vcpu_exit_exception_t,
+/// Maps a region in the virtual address space of the current task into the guest physical
+/// address space of the virutal machine
+pub fn map_mem(mem: &[u8], ipa: u64, mem_perm: &MemPerm) -> Result<(), Error> {
+	match_error_code(unsafe {
+		hv_vm_map(
+			mem.as_ptr() as *mut c_void,
+			ipa as hv_ipa_t,
+			mem.len() as size_t,
+			match_MemPerm(mem_perm),
+		)
+	})
 }
 
-/// The value that identifies exits requested by exit handler on the host.
-pub const HV_EXIT_REASON_CANCELED: hv_exit_reason_t = 0;
+/// Unmaps a region in the guest physical address space of the virutal machine
+pub fn unmap_mem(ipa: u64, size: usize) -> Result<(), Error> {
+	match_error_code(unsafe { hv_vm_unmap(ipa as hv_ipa_t, size as size_t) })
+}
+
+/// Modifies the permissions of a region in the guest physical address space of the virtual
+/// machine
+pub fn protect_mem(ipa: u64, size: usize, mem_perm: &MemPerm) -> Result<(), Error> {
+	match_error_code(unsafe {
+		hv_vm_protect(ipa as hv_ipa_t, size as size_t, match_MemPerm(mem_perm))
+	})
+}
+
+#[derive(Copy, Clone, Debug)]
+/// Exit reason of a virtual CPU
+/// Enum is derived from
+/// https://github.com/Thog/ahv
+pub enum VirtualCpuExitReason {
+	/// Asynchronous exit.
+	Cancelled,
+
+	/// Guest exception.
+	Exception {
+		/// The informations about the guest exception.
+		exception: hv_vcpu_exit_exception_t,
+	},
+
+	/// Virtual Timer enters the pending state.
+	VTimerActivated,
+
+	/// Unexpected exit.
+	Unknown,
+}
 
-/// The value that identifies traps caused by the guest operations.
-pub const HV_EXIT_REASON_EXCEPTION: hv_exit_reason_t = 1;
+impl From<hv_vcpu_exit_t> for VirtualCpuExitReason {
+	fn from(value: hv_vcpu_exit_t) -> VirtualCpuExitReason {
+		match value.reason {
+			HV_EXIT_REASON_CANCELED => VirtualCpuExitReason::Cancelled,
+			HV_EXIT_REASON_EXCEPTION => VirtualCpuExitReason::Exception {
+				exception: value.exception,
+			},
+			HV_EXIT_REASON_VTIMER_ACTIVATED => VirtualCpuExitReason::VTimerActivated,
+			HV_EXIT_REASON_UNKNOWN => VirtualCpuExitReason::Unknown,
 
-/// The value that identifies when the virtual timer enters the pending state.
-pub const HV_EXIT_REASON_VTIMER_ACTIVATED: hv_exit_reason_t = 2;
+			// Unexpected unknown
+			_ => VirtualCpuExitReason::Unknown,
+		}
+	}
+}
 
-/// The value that identifies unexpected exits.
-pub const HV_EXIT_REASON_UNKNOWN: hv_exit_reason_t = 3;
+/// Virtual CPU
+pub struct VirtualCpu {
+	/// Virtual CPU handle
+	id: hv_vcpu_t,
 
-/// The value that identifies register X0.
-pub const HV_REG_X0: hv_reg_t = 0;
+	/// VirtualCPU exit informations.
+	vcpu_exit: *const hv_vcpu_exit_t,
+}
 
-/// The value that identifies register X1.
-pub const HV_REG_X1: hv_reg_t = 1;
+/// aarch64 architectural register
+pub enum Register {
+	/// X0 register.
+	X0,
 
-/// The value that identifies register X2.
-pub const HV_REG_X2: hv_reg_t = 2;
+	/// X1 register.
+	X1,
 
-/// The value that identifies register X3.
-pub const HV_REG_X3: hv_reg_t = 3;
+	/// X2 register.
+	X2,
 
-/// The value that identifies register X4.
-pub const HV_REG_X4: hv_reg_t = 4;
+	/// X3 register.
+	X3,
 
-/// The value that identifies register X5.
-pub const HV_REG_X5: hv_reg_t = 5;
+	/// X4 register.
+	X4,
 
-/// The value that identifies register X6.
-pub const HV_REG_X6: hv_reg_t = 6;
+	/// X5 register.
+	X5,
 
-/// The value that identifies register X7.
-pub const HV_REG_X7: hv_reg_t = 7;
+	/// X6 register.
+	X6,
 
-/// The value that identifies register X8.
-pub const HV_REG_X8: hv_reg_t = 8;
+	/// X7 register.
+	X7,
 
-/// The value that identifies register X9.
-pub const HV_REG_X9: hv_reg_t = 9;
+	/// X8 register.
+	X8,
 
-/// The value that identifies register X10.
-pub const HV_REG_X10: hv_reg_t = 10;
+	/// X9 register.
+	X9,
+
+	/// X10 register.
+	X10,
+
+	/// X11 register.
+	X11,
+
+	/// X12 register.
+	X12,
+
+	/// X13 register.
+	X13,
+
+	/// X14 register.
+	X14,
+
+	/// X15 register.
+	X15,
+
+	/// X16 register.
+	X16,
+
+	/// X17 register.
+	X17,
+
+	/// X18 register.
+	X18,
+
+	/// X19 register.
+	X19,
+
+	/// X20 register.
+	X20,
+
+	/// X21 register.
+	X21,
+
+	/// X22 register.
+	X22,
+
+	/// X23 register.
+	X23,
+
+	/// X24 register.
+	X24,
+
+	/// X25 register.
+	X25,
+
+	/// X26 register.
+	X26,
+
+	/// X27 register.
+	X27,
+
+	/// X28 register.
+	X28,
+
+	/// X29 register.
+	X29,
+
+	/// FP register.
+	FP,
+
+	/// X30 register.
+	X30,
+
+	/// LR register.
+	LR,
+
+	/// PC register.
+	PC,
+
+	/// FPCR register.
+	FPCR,
+
+	/// FPSR register.
+	FPSR,
+
+	/// CPSR register.
+	CPSR,
+}
+
+impl From<Register> for hv_reg_t {
+	fn from(value: Register) -> hv_reg_t {
+		match value {
+			Register::X0 => HV_REG_X0,
+			Register::X1 => HV_REG_X1,
+			Register::X2 => HV_REG_X2,
+			Register::X3 => HV_REG_X3,
+			Register::X4 => HV_REG_X4,
+			Register::X5 => HV_REG_X5,
+			Register::X6 => HV_REG_X6,
+			Register::X7 => HV_REG_X7,
+			Register::X8 => HV_REG_X8,
+			Register::X9 => HV_REG_X9,
+			Register::X10 => HV_REG_X10,
+			Register::X11 => HV_REG_X11,
+			Register::X12 => HV_REG_X12,
+			Register::X13 => HV_REG_X13,
+			Register::X14 => HV_REG_X14,
+			Register::X15 => HV_REG_X15,
+			Register::X16 => HV_REG_X16,
+			Register::X17 => HV_REG_X17,
+			Register::X18 => HV_REG_X18,
+			Register::X19 => HV_REG_X19,
+			Register::X20 => HV_REG_X20,
+			Register::X21 => HV_REG_X21,
+			Register::X22 => HV_REG_X22,
+			Register::X23 => HV_REG_X23,
+			Register::X24 => HV_REG_X24,
+			Register::X25 => HV_REG_X25,
+			Register::X26 => HV_REG_X26,
+			Register::X27 => HV_REG_X27,
+			Register::X28 => HV_REG_X28,
+			Register::X29 => HV_REG_X29,
+			Register::X30 => HV_REG_X30,
+			Register::FP => HV_REG_FP,
+			Register::LR => HV_REG_LR,
+			Register::PC => HV_REG_PC,
+			Register::FPCR => HV_REG_FPCR,
+			Register::FPSR => HV_REG_FPSR,
+			Register::CPSR => HV_REG_CPSR,
+		}
+	}
+}
 
-/// The value that identifies register X11.
-pub const HV_REG_X11: hv_reg_t = 11;
+/// ARM system register.
+#[derive(Copy, Clone, Debug)]
+pub enum SystemRegister {
+	/// DBGBVR0_EL1 register.
+	DBGBVR0_EL1,
 
-/// The value that identifies register X12.
-pub const HV_REG_X12: hv_reg_t = 12;
+	/// DBGBCR0_EL1 register.
+	DBGBCR0_EL1,
 
-/// The value that identifies register X13.
-pub const HV_REG_X13: hv_reg_t = 13;
+	/// DBGWVR0_EL1 register.
+	DBGWVR0_EL1,
 
-/// The value that identifies register X14.
-pub const HV_REG_X14: hv_reg_t = 14;
+	/// DBGWCR0_EL1 register.
+	DBGWCR0_EL1,
 
-/// The value that identifies register X15.
-pub const HV_REG_X15: hv_reg_t = 15;
+	/// DBGBVR1_EL1 register.
+	DBGBVR1_EL1,
 
-/// The value that identifies register X16.
-pub const HV_REG_X16: hv_reg_t = 16;
+	/// DBGBCR1_EL1 register.
+	DBGBCR1_EL1,
 
-/// The value that identifies register X17.
-pub const HV_REG_X17: hv_reg_t = 17;
+	/// DBGWVR1_EL1 register.
+	DBGWVR1_EL1,
 
-/// The value that identifies register X18.
-pub const HV_REG_X18: hv_reg_t = 18;
+	/// DBGWCR1_EL1 register.
+	DBGWCR1_EL1,
 
-/// The value that identifies register X19.
-pub const HV_REG_X19: hv_reg_t = 19;
+	/// MDCCINT_EL1 register.
+	MDCCINT_EL1,
 
-/// The value that identifies register X20.
-pub const HV_REG_X20: hv_reg_t = 20;
+	/// MDSCR_EL1 register.
+	MDSCR_EL1,
 
-/// The value that identifies register X21.
-pub const HV_REG_X21: hv_reg_t = 21;
+	/// DBGBVR2_EL1 register.
+	DBGBVR2_EL1,
 
-/// The value that identifies register X22.
-pub const HV_REG_X22: hv_reg_t = 22;
+	/// DBGBCR2_EL1 register.
+	DBGBCR2_EL1,
 
-/// The value that identifies register X23.
-pub const HV_REG_X23: hv_reg_t = 23;
+	/// DBGWVR2_EL1 register.
+	DBGWVR2_EL1,
 
-/// The value that identifies register X24.
-pub const HV_REG_X24: hv_reg_t = 24;
+	/// DBGWCR2_EL1 register.
+	DBGWCR2_EL1,
 
-/// The value that identifies register X25.
-pub const HV_REG_X25: hv_reg_t = 25;
+	/// DBGBVR3_EL1 register.
+	DBGBVR3_EL1,
 
-/// The value that identifies register X26.
-pub const HV_REG_X26: hv_reg_t = 26;
+	/// DBGBCR3_EL1 register.
+	DBGBCR3_EL1,
 
-/// The value that identifies register X27.
-pub const HV_REG_X27: hv_reg_t = 27;
+	/// DBGWVR3_EL1 register.
+	DBGWVR3_EL1,
 
-/// The value that identifies register X28.
-pub const HV_REG_X28: hv_reg_t = 28;
+	/// DBGWCR3_EL1 register.
+	DBGWCR3_EL1,
 
-/// The value that identifies register X29.
-pub const HV_REG_X29: hv_reg_t = 29;
+	/// DBGBVR4_EL1 register.
+	DBGBVR4_EL1,
 
-/// The value that identifies register FP.
-pub const HV_REG_FP: hv_reg_t = HV_REG_X29;
+	/// DBGBCR4_EL1 register.
+	DBGBCR4_EL1,
 
-/// The value that identifies register X30.
-pub const HV_REG_X30: hv_reg_t = 30;
+	/// DBGWVR4_EL1 register.
+	DBGWVR4_EL1,
 
-/// The value that identifies register LR.
-pub const HV_REG_LR: hv_reg_t = HV_REG_X30;
+	/// DBGWCR4_EL1 register.
+	DBGWCR4_EL1,
 
-/// The value that identifies register PC.
-pub const HV_REG_PC: hv_reg_t = 31;
+	/// DBGBVR5_EL1 register.
+	DBGBVR5_EL1,
 
-/// The value that identifies register FPCR.
-pub const HV_REG_FPCR: hv_reg_t = 32;
+	/// DBGBCR5_EL1 register.
+	DBGBCR5_EL1,
 
-/// The value that identifies register FPSR.
-pub const HV_REG_FPSR: hv_reg_t = 33;
+	/// DBGWVR5_EL1 register.
+	DBGWVR5_EL1,
 
-/// The value that identifies register CPSR.
-pub const HV_REG_CPSR: hv_reg_t = 34;
+	/// DBGWCR5_EL1 register.
+	DBGWCR5_EL1,
 
-/// The value that identifies register Q0.
-pub const HV_SIMD_FP_REG_Q0: hv_simd_fp_reg_t = 0;
+	/// DBGBVR6_EL1 register.
+	DBGBVR6_EL1,
 
-/// The value that identifies register Q1.
-pub const HV_SIMD_FP_REG_Q1: hv_simd_fp_reg_t = 1;
+	/// DBGBCR6_EL1 register.
+	DBGBCR6_EL1,
 
-/// The value that identifies register Q2.
-pub const HV_SIMD_FP_REG_Q2: hv_simd_fp_reg_t = 2;
+	/// DBGWVR6_EL1 register.
+	DBGWVR6_EL1,
 
-/// The value that identifies register Q3.
-pub const HV_SIMD_FP_REG_Q3: hv_simd_fp_reg_t = 3;
+	/// DBGWCR6_EL1 register.
+	DBGWCR6_EL1,
 
-/// The value that identifies register Q4.
-pub const HV_SIMD_FP_REG_Q4: hv_simd_fp_reg_t = 4;
+	/// DBGBVR7_EL1 register.
+	DBGBVR7_EL1,
 
-/// The value that identifies register Q5.
-pub const HV_SIMD_FP_REG_Q5: hv_simd_fp_reg_t = 5;
+	/// DBGBCR7_EL1 register.
+	DBGBCR7_EL1,
 
-/// The value that identifies register Q6.
-pub const HV_SIMD_FP_REG_Q6: hv_simd_fp_reg_t = 6;
+	/// DBGWVR7_EL1 register.
+	DBGWVR7_EL1,
 
-/// The value that identifies register Q7.
-pub const HV_SIMD_FP_REG_Q7: hv_simd_fp_reg_t = 7;
+	/// DBGWCR7_EL1 register.
+	DBGWCR7_EL1,
 
-/// The value that identifies register Q8.
-pub const HV_SIMD_FP_REG_Q8: hv_simd_fp_reg_t = 8;
+	/// DBGBVR8_EL1 register.
+	DBGBVR8_EL1,
 
-/// The value that identifies register Q9.
-pub const HV_SIMD_FP_REG_Q9: hv_simd_fp_reg_t = 9;
+	/// DBGBCR8_EL1 register.
+	DBGBCR8_EL1,
 
-/// The value that identifies register Q10.
-pub const HV_SIMD_FP_REG_Q10: hv_simd_fp_reg_t = 10;
+	/// DBGWVR8_EL1 register.
+	DBGWVR8_EL1,
 
-/// The value that identifies register Q11.
-pub const HV_SIMD_FP_REG_Q11: hv_simd_fp_reg_t = 11;
+	/// DBGWCR8_EL1 register.
+	DBGWCR8_EL1,
 
-/// The value that identifies register Q12.
-pub const HV_SIMD_FP_REG_Q12: hv_simd_fp_reg_t = 12;
+	/// DBGBVR9_EL1 register.
+	DBGBVR9_EL1,
 
-/// The value that identifies register Q13.
-pub const HV_SIMD_FP_REG_Q13: hv_simd_fp_reg_t = 13;
+	/// DBGBCR9_EL1 register.
+	DBGBCR9_EL1,
 
-/// The value that identifies register Q14.
-pub const HV_SIMD_FP_REG_Q14: hv_simd_fp_reg_t = 14;
+	/// DBGWVR9_EL1 register.
+	DBGWVR9_EL1,
 
-/// The value that identifies register Q15.
-pub const HV_SIMD_FP_REG_Q15: hv_simd_fp_reg_t = 15;
+	/// DBGWCR9_EL1 register.
+	DBGWCR9_EL1,
 
-/// The value that identifies register Q16.
-pub const HV_SIMD_FP_REG_Q16: hv_simd_fp_reg_t = 16;
+	/// DBGBVR10_EL1 register.
+	DBGBVR10_EL1,
 
-/// The value that identifies register Q17.
-pub const HV_SIMD_FP_REG_Q17: hv_simd_fp_reg_t = 17;
+	/// DBGBCR10_EL1 register.
+	DBGBCR10_EL1,
 
-/// The value that identifies register Q18.
-pub const HV_SIMD_FP_REG_Q18: hv_simd_fp_reg_t = 18;
+	/// DBGWVR10_EL1 register.
+	DBGWVR10_EL1,
 
-/// The value that identifies register Q19.
-pub const HV_SIMD_FP_REG_Q19: hv_simd_fp_reg_t = 19;
+	/// DBGWCR10_EL1 register.
+	DBGWCR10_EL1,
 
-/// The value that identifies register Q20.
-pub const HV_SIMD_FP_REG_Q20: hv_simd_fp_reg_t = 20;
+	/// DBGBVR11_EL1 register.
+	DBGBVR11_EL1,
 
-/// The value that identifies register Q21.
-pub const HV_SIMD_FP_REG_Q21: hv_simd_fp_reg_t = 21;
+	/// DBGBCR11_EL1 register.
+	DBGBCR11_EL1,
 
-/// The value that identifies register Q22.
-pub const HV_SIMD_FP_REG_Q22: hv_simd_fp_reg_t = 22;
+	/// DBGWVR11_EL1 register.
+	DBGWVR11_EL1,
 
-/// The value that identifies register Q23.
-pub const HV_SIMD_FP_REG_Q23: hv_simd_fp_reg_t = 23;
+	/// DBGWCR11_EL1 register.
+	DBGWCR11_EL1,
 
-/// The value that identifies register Q24.
-pub const HV_SIMD_FP_REG_Q24: hv_simd_fp_reg_t = 24;
+	/// DBGBVR12_EL1 register.
+	DBGBVR12_EL1,
 
-/// The value that identifies register Q25.
-pub const HV_SIMD_FP_REG_Q25: hv_simd_fp_reg_t = 25;
+	/// DBGBCR12_EL1 register.
+	DBGBCR12_EL1,
 
-/// The value that identifies register Q26.
-pub const HV_SIMD_FP_REG_Q26: hv_simd_fp_reg_t = 26;
+	/// DBGWVR12_EL1 register.
+	DBGWVR12_EL1,
 
-/// The value that identifies register Q27.
-pub const HV_SIMD_FP_REG_Q27: hv_simd_fp_reg_t = 27;
+	/// DBGWCR12_EL1 register.
+	DBGWCR12_EL1,
 
-/// The value that identifies register Q28.
-pub const HV_SIMD_FP_REG_Q28: hv_simd_fp_reg_t = 28;
+	/// DBGBVR13_EL1 register.
+	DBGBVR13_EL1,
 
-/// The value that identifies register Q29.
-pub const HV_SIMD_FP_REG_Q29: hv_simd_fp_reg_t = 29;
+	/// DBGBCR13_EL1 register.
+	DBGBCR13_EL1,
 
-/// The value that identifies register Q30.
-pub const HV_SIMD_FP_REG_Q30: hv_simd_fp_reg_t = 30;
+	/// DBGWVR13_EL1 register.
+	DBGWVR13_EL1,
 
-/// The value that identifies register Q31.
-pub const HV_SIMD_FP_REG_Q31: hv_simd_fp_reg_t = 31;
+	/// DBGWCR13_EL1 register.
+	DBGWCR13_EL1,
 
-/// The value that identifies register DBGBVR0_EL1.
-pub const HV_SYS_REG_DBGBVR0_EL1: hv_sys_reg_t = 0x8004;
+	/// DBGBVR14_EL1 register.
+	DBGBVR14_EL1,
 
-/// The value that identifies register DBGBCR0_EL1.
-pub const HV_SYS_REG_DBGBCR0_EL1: hv_sys_reg_t = 0x8005;
+	/// DBGBCR14_EL1 register.
+	DBGBCR14_EL1,
 
-/// The value that identifies register DBGWVR0_EL1.
-pub const HV_SYS_REG_DBGWVR0_EL1: hv_sys_reg_t = 0x8006;
+	/// DBGWVR14_EL1 register.
+	DBGWVR14_EL1,
 
-/// The value that identifies register DBGWCR0_EL1.
-pub const HV_SYS_REG_DBGWCR0_EL1: hv_sys_reg_t = 0x8007;
+	/// DBGWCR14_EL1 register.
+	DBGWCR14_EL1,
 
-/// The value that identifies register DBGBVR1_EL1.
-pub const HV_SYS_REG_DBGBVR1_EL1: hv_sys_reg_t = 0x800c;
+	/// DBGBVR15_EL1 register.
+	DBGBVR15_EL1,
 
-/// The value that identifies register DBGBCR1_EL1.
-pub const HV_SYS_REG_DBGBCR1_EL1: hv_sys_reg_t = 0x800d;
+	/// DBGBCR15_EL1 register.
+	DBGBCR15_EL1,
 
-/// The value that identifies register DBGWVR1_EL1.
-pub const HV_SYS_REG_DBGWVR1_EL1: hv_sys_reg_t = 0x800e;
+	/// DBGWVR15_EL1 register.
+	DBGWVR15_EL1,
 
-/// The value that identifies register DBGWCR1_EL1.
-pub const HV_SYS_REG_DBGWCR1_EL1: hv_sys_reg_t = 0x800f;
+	/// DBGWCR15_EL1 register.
+	DBGWCR15_EL1,
 
-/// The value that identifies register MDCCINT_EL1.
-pub const HV_SYS_REG_MDCCINT_EL1: hv_sys_reg_t = 0x8010;
+	/// MIDR_EL1 register.
+	MIDR_EL1,
 
-/// The value that identifies register MDSCR_EL1.
-pub const HV_SYS_REG_MDSCR_EL1: hv_sys_reg_t = 0x8012;
+	/// MPIDR_EL1 register.
+	MPIDR_EL1,
 
-/// The value that identifies register DBGBVR2_EL1.
-pub const HV_SYS_REG_DBGBVR2_EL1: hv_sys_reg_t = 0x8014;
+	/// ID_AA64PFR0_EL1 register.
+	ID_AA64PFR0_EL1,
 
-/// The value that identifies register DBGBCR2_EL1.
-pub const HV_SYS_REG_DBGBCR2_EL1: hv_sys_reg_t = 0x8015;
+	/// ID_AA64PFR1_EL1 register.
+	ID_AA64PFR1_EL1,
 
-/// The value that identifies register DBGWVR2_EL1.
-pub const HV_SYS_REG_DBGWVR2_EL1: hv_sys_reg_t = 0x8016;
+	/// ID_AA64DFR0_EL1 register.
+	ID_AA64DFR0_EL1,
 
-/// The value that identifies register DBGWCR2_EL1.
-pub const HV_SYS_REG_DBGWCR2_EL1: hv_sys_reg_t = 0x8017;
+	/// ID_AA64DFR1_EL1 register.
+	ID_AA64DFR1_EL1,
 
-/// The value that identifies register DBGBVR3_EL1.
-pub const HV_SYS_REG_DBGBVR3_EL1: hv_sys_reg_t = 0x801c;
+	/// ID_AA64ISAR0_EL1 register.
+	ID_AA64ISAR0_EL1,
 
-/// The value that identifies register DBGBCR3_EL1.
-pub const HV_SYS_REG_DBGBCR3_EL1: hv_sys_reg_t = 0x801d;
+	/// ID_AA64ISAR1_EL1 register.
+	ID_AA64ISAR1_EL1,
 
-/// The value that identifies register DBGWVR3_EL1.
-pub const HV_SYS_REG_DBGWVR3_EL1: hv_sys_reg_t = 0x801e;
+	/// AA64MMFR0_EL1 register.
+	ID_AA64MMFR0_EL1,
 
-/// The value that identifies register DBGWCR3_EL1.
-pub const HV_SYS_REG_DBGWCR3_EL1: hv_sys_reg_t = 0x801f;
+	/// ID_AA64MMFR1_EL1 register.
+	ID_AA64MMFR1_EL1,
 
-/// The value that identifies register DBGBVR4_EL1.
-pub const HV_SYS_REG_DBGBVR4_EL1: hv_sys_reg_t = 0x8024;
+	/// AA64MMFR2_EL1 register.
+	ID_AA64MMFR2_EL1,
 
-/// The value that identifies register DBGBCR4_EL1.
-pub const HV_SYS_REG_DBGBCR4_EL1: hv_sys_reg_t = 0x8025;
+	/// SCTLR_EL1 register.
+	SCTLR_EL1,
 
-/// The value that identifies register DBGWVR4_EL1.
-pub const HV_SYS_REG_DBGWVR4_EL1: hv_sys_reg_t = 0x8026;
+	/// CPACR_EL1 register.
+	CPACR_EL1,
 
-/// The value that identifies register DBGWCR4_EL1.
-pub const HV_SYS_REG_DBGWCR4_EL1: hv_sys_reg_t = 0x8027;
+	/// TTBR0_EL1 register.
+	TTBR0_EL1,
 
-/// The value that identifies register DBGBVR5_EL1.
-pub const HV_SYS_REG_DBGBVR5_EL1: hv_sys_reg_t = 0x802c;
+	/// TTBR1_EL1 register.
+	TTBR1_EL1,
 
-/// The value that identifies register DBGBCR5_EL1.
-pub const HV_SYS_REG_DBGBCR5_EL1: hv_sys_reg_t = 0x802d;
+	/// TCR_EL1 register.
+	TCR_EL1,
 
-/// The value that identifies register DBGWVR5_EL1.
-pub const HV_SYS_REG_DBGWVR5_EL1: hv_sys_reg_t = 0x802e;
+	/// APIAKEYLO_EL1 register.
+	APIAKEYLO_EL1,
 
-/// The value that identifies register BGWCR5_EL1.
-pub const HV_SYS_REG_DBGWCR5_EL1: hv_sys_reg_t = 0x802f;
+	/// APIAKEYHI_EL1 register.
+	APIAKEYHI_EL1,
 
-/// The value that identifies register DBGBVR6_EL1.
-pub const HV_SYS_REG_DBGBVR6_EL1: hv_sys_reg_t = 0x8034;
+	/// APIBKEYLO_EL1 register.
+	APIBKEYLO_EL1,
 
-/// The value that identifies register DBGBCR6_EL1.
-pub const HV_SYS_REG_DBGBCR6_EL1: hv_sys_reg_t = 0x8035;
+	/// APIBKEYHI_EL1 register.
+	APIBKEYHI_EL1,
 
-/// The value that identifies register DBGWVR6_EL1.
-pub const HV_SYS_REG_DBGWVR6_EL1: hv_sys_reg_t = 0x8036;
+	/// APDAKEYLO_EL1 register.
+	APDAKEYLO_EL1,
 
-/// The value that identifies register DBGWCR6_EL1.
-pub const HV_SYS_REG_DBGWCR6_EL1: hv_sys_reg_t = 0x8037;
+	/// APDAKEYHI_EL1 register.
+	APDAKEYHI_EL1,
 
-/// The value that identifies register DBGBVR7_EL1.
-pub const HV_SYS_REG_DBGBVR7_EL1: hv_sys_reg_t = 0x803c;
+	/// APDBKEYLO_EL1 register.
+	APDBKEYLO_EL1,
 
-/// The value that identifies register DBGBCR7_EL1.
-pub const HV_SYS_REG_DBGBCR7_EL1: hv_sys_reg_t = 0x803d;
+	/// APDBKEYHI_EL1 register.
+	APDBKEYHI_EL1,
 
-/// The value that identifies register DBGWVR7_EL1.
-pub const HV_SYS_REG_DBGWVR7_EL1: hv_sys_reg_t = 0x803e;
+	/// APGAKEYLO_EL1 register.
+	APGAKEYLO_EL1,
 
-/// The value that identifies register DBGWCR7_EL1.
-pub const HV_SYS_REG_DBGWCR7_EL1: hv_sys_reg_t = 0x803f;
+	/// APGAKEYHI_EL1 register.
+	APGAKEYHI_EL1,
 
-/// The value that identifies register DBGBVR8_EL1.
-pub const HV_SYS_REG_DBGBVR8_EL1: hv_sys_reg_t = 0x8044;
+	/// SPSR_EL1 register.
+	SPSR_EL1,
 
-/// The value that identifies register DBGBCR8_EL1.
-pub const HV_SYS_REG_DBGBCR8_EL1: hv_sys_reg_t = 0x8045;
+	/// ELR_EL1 register.
+	ELR_EL1,
 
-/// The value that identifies register DBGWVR8_EL1.
-pub const HV_SYS_REG_DBGWVR8_EL1: hv_sys_reg_t = 0x8046;
+	/// SP_EL0 register.
+	SP_EL0,
 
-/// The value that identifies register DBGWCR8_EL1.
-pub const HV_SYS_REG_DBGWCR8_EL1: hv_sys_reg_t = 0x8047;
+	/// AFSR0_EL1 register.
+	AFSR0_EL1,
 
-/// The value that identifies register DBGBVR9_EL1.
-pub const HV_SYS_REG_DBGBVR9_EL1: hv_sys_reg_t = 0x804c;
+	/// AFSR1_EL1 register.
+	AFSR1_EL1,
 
-/// The value that identifies register DBGBCR9_EL1.
-pub const HV_SYS_REG_DBGBCR9_EL1: hv_sys_reg_t = 0x804d;
+	/// ESR_EL1 register.
+	ESR_EL1,
 
-/// The value that identifies register DBGWVR9_EL1.
-pub const HV_SYS_REG_DBGWVR9_EL1: hv_sys_reg_t = 0x804e;
+	/// FAR_EL1 register.
+	FAR_EL1,
 
-/// The value that identifies register DBGWCR9_EL1.
-pub const HV_SYS_REG_DBGWCR9_EL1: hv_sys_reg_t = 0x804f;
+	/// PAR_EL1 register.
+	PAR_EL1,
 
-/// The value that identifies register DBGBVR10_EL1.
-pub const HV_SYS_REG_DBGBVR10_EL1: hv_sys_reg_t = 0x8054;
+	/// MAIR_EL1 register.
+	MAIR_EL1,
 
-/// The value that identifies register DBGBCR10_EL1.
-pub const HV_SYS_REG_DBGBCR10_EL1: hv_sys_reg_t = 0x8055;
+	/// AMAIR_EL1 register.
+	AMAIR_EL1,
 
-/// The value that identifies register DBGWVR10_EL1.
-pub const HV_SYS_REG_DBGWVR10_EL1: hv_sys_reg_t = 0x8056;
+	/// VBAR_EL1 register.
+	VBAR_EL1,
 
-/// The value that identifies register DBGWCR10_EL1.
-pub const HV_SYS_REG_DBGWCR10_EL1: hv_sys_reg_t = 0x8057;
+	/// CONTEXTIDR_EL1 register.
+	CONTEXTIDR_EL1,
 
-/// The value that identifies register DBGBVR11_EL1.
-pub const HV_SYS_REG_DBGBVR11_EL1: hv_sys_reg_t = 0x805c;
+	/// TPIDR_EL1 register.
+	TPIDR_EL1,
 
-/// The value that identifies register DBGBCR11_EL1.
-pub const HV_SYS_REG_DBGBCR11_EL1: hv_sys_reg_t = 0x805d;
+	/// CNTKCTL_EL1 register.
+	CNTKCTL_EL1,
 
-/// The value that identifies register DBGWVR11_EL1.
-pub const HV_SYS_REG_DBGWVR11_EL1: hv_sys_reg_t = 0x805e;
+	/// CSSELR_EL1 register.
+	CSSELR_EL1,
 
-/// The value that identifies register DBGWCR11_EL1.
-pub const HV_SYS_REG_DBGWCR11_EL1: hv_sys_reg_t = 0x805f;
+	/// TPIDR_EL0 register.
+	TPIDR_EL0,
 
-/// The value that identifies register DBGBVR12_EL1.
-pub const HV_SYS_REG_DBGBVR12_EL1: hv_sys_reg_t = 0x8064;
+	/// TPIDRRO_EL0 register.
+	TPIDRRO_EL0,
 
-/// The value that identifies register DBGBCR12_EL1.
-pub const HV_SYS_REG_DBGBCR12_EL1: hv_sys_reg_t = 0x8065;
-
-/// The value that identifies register DBGWVR12_EL1.
-pub const HV_SYS_REG_DBGWVR12_EL1: hv_sys_reg_t = 0x8066;
-
-/// The value that identifies register DBGWCR12_EL1.
-pub const HV_SYS_REG_DBGWCR12_EL1: hv_sys_reg_t = 0x8067;
-
-/// The value that identifies register DBGBVR13_EL1.
-pub const HV_SYS_REG_DBGBVR13_EL1: hv_sys_reg_t = 0x806c;
-
-/// The value that identifies register DBGBCR13_EL1.
-pub const HV_SYS_REG_DBGBCR13_EL1: hv_sys_reg_t = 0x806d;
-
-/// The value that identifies register DBGWVR13_EL1.
-pub const HV_SYS_REG_DBGWVR13_EL1: hv_sys_reg_t = 0x806e;
-
-/// The value that identifies register DBGWCR13_EL1.
-pub const HV_SYS_REG_DBGWCR13_EL1: hv_sys_reg_t = 0x806f;
-
-/// The value that identifies register DBGBVR14_EL1.
-pub const HV_SYS_REG_DBGBVR14_EL1: hv_sys_reg_t = 0x8074;
-
-/// The value that identifies register DBGBCR14_EL1.
-pub const HV_SYS_REG_DBGBCR14_EL1: hv_sys_reg_t = 0x8075;
-
-/// The value that identifies register DBGWVR14_EL1.
-pub const HV_SYS_REG_DBGWVR14_EL1: hv_sys_reg_t = 0x8076;
-
-/// The value that identifies register DBGWCR14_EL1.
-pub const HV_SYS_REG_DBGWCR14_EL1: hv_sys_reg_t = 0x8077;
-
-/// The value that identifies register DBGBVR15_EL1.
-pub const HV_SYS_REG_DBGBVR15_EL1: hv_sys_reg_t = 0x807c;
-
-/// The value that identifies register DBGBCR15_EL1.
-pub const HV_SYS_REG_DBGBCR15_EL1: hv_sys_reg_t = 0x807d;
-
-/// The value that identifies register DBGWVR15_EL1.
-pub const HV_SYS_REG_DBGWVR15_EL1: hv_sys_reg_t = 0x807e;
-
-/// The value that identifies register DBGWCR15_EL1.
-pub const HV_SYS_REG_DBGWCR15_EL1: hv_sys_reg_t = 0x807f;
-
-/// The value that identifies register MIDR_EL1.
-pub const HV_SYS_REG_MIDR_EL1: hv_sys_reg_t = 0xc000;
-
-/// The value that identifies register MPIDR_EL1.
-pub const HV_SYS_REG_MPIDR_EL1: hv_sys_reg_t = 0xc005;
-
-/// The value that identifies register AA64PFR0_EL1.
-pub const HV_SYS_REG_ID_AA64PFR0_EL1: hv_sys_reg_t = 0xc020;
-
-/// The value that identifies register AA64PFR1_EL1.
-pub const HV_SYS_REG_ID_AA64PFR1_EL1: hv_sys_reg_t = 0xc021;
-
-/// The value that identifies register AA64DFR0_EL1.
-pub const HV_SYS_REG_ID_AA64DFR0_EL1: hv_sys_reg_t = 0xc028;
-
-/// The value that identifies register AA64DFR1_EL1.
-pub const HV_SYS_REG_ID_AA64DFR1_EL1: hv_sys_reg_t = 0xc029;
-
-/// The value that identifies register AA64ISAR0_EL1.
-pub const HV_SYS_REG_ID_AA64ISAR0_EL1: hv_sys_reg_t = 0xc030;
-
-/// The value that identifies register AA64ISAR1_EL1.
-pub const HV_SYS_REG_ID_AA64ISAR1_EL1: hv_sys_reg_t = 0xc031;
-
-/// The value that identifies register AA64MMFR0_EL1.
-pub const HV_SYS_REG_ID_AA64MMFR0_EL1: hv_sys_reg_t = 0xc038;
-
-/// The value that identifies register AA64MMFR1_EL1.
-pub const HV_SYS_REG_ID_AA64MMFR1_EL1: hv_sys_reg_t = 0xc039;
-
-/// The value that identifies register AA64MMFR2_EL1.
-pub const HV_SYS_REG_ID_AA64MMFR2_EL1: hv_sys_reg_t = 0xc03a;
-
-/// The value that identifies register SCTLR_EL1.
-pub const HV_SYS_REG_SCTLR_EL1: hv_sys_reg_t = 0xc080;
-
-/// The value that identifies register CPACR_EL1.
-pub const HV_SYS_REG_CPACR_EL1: hv_sys_reg_t = 0xc082;
-
-/// The value that identifies register TTBR0_EL1.
-pub const HV_SYS_REG_TTBR0_EL1: hv_sys_reg_t = 0xc100;
-
-/// The value that identifies register TTBR1_EL1.
-pub const HV_SYS_REG_TTBR1_EL1: hv_sys_reg_t = 0xc101;
-
-/// The value that identifies register TCR_EL1.
-pub const HV_SYS_REG_TCR_EL1: hv_sys_reg_t = 0xc102;
-
-/// The value that identifies register APIAKEYLO_EL1.
-pub const HV_SYS_REG_APIAKEYLO_EL1: hv_sys_reg_t = 0xc108;
-
-/// The value that identifies register APIAKEYHI_EL1.
-pub const HV_SYS_REG_APIAKEYHI_EL1: hv_sys_reg_t = 0xc109;
-
-/// The value that identifies register APIBKEYLO_EL1.
-pub const HV_SYS_REG_APIBKEYLO_EL1: hv_sys_reg_t = 0xc10a;
-
-/// The value that identifies register APIBKEYHI_EL1.
-pub const HV_SYS_REG_APIBKEYHI_EL1: hv_sys_reg_t = 0xc10b;
-
-/// The value that identifies register APDAKEYLO_EL1.
-pub const HV_SYS_REG_APDAKEYLO_EL1: hv_sys_reg_t = 0xc110;
-
-/// The value that identifies register APDAKEYHI_EL1.
-pub const HV_SYS_REG_APDAKEYHI_EL1: hv_sys_reg_t = 0xc111;
-
-/// The value that identifies register APDBKEYLO_EL1.
-pub const HV_SYS_REG_APDBKEYLO_EL1: hv_sys_reg_t = 0xc112;
-
-/// The value that identifies register APDBKEYHI_EL1.
-pub const HV_SYS_REG_APDBKEYHI_EL1: hv_sys_reg_t = 0xc113;
-
-/// The value that identifies register APGAKEYLO_EL1.
-pub const HV_SYS_REG_APGAKEYLO_EL1: hv_sys_reg_t = 0xc118;
-
-/// The value that identifies register APGAKEYHI_EL1.
-pub const HV_SYS_REG_APGAKEYHI_EL1: hv_sys_reg_t = 0xc119;
-
-/// The value that identifies register SPSR_EL1.
-pub const HV_SYS_REG_SPSR_EL1: hv_sys_reg_t = 0xc200;
-
-/// The value that identifies register ELR_EL1.
-pub const HV_SYS_REG_ELR_EL1: hv_sys_reg_t = 0xc201;
-
-/// The value that identifies register SP_EL0.
-pub const HV_SYS_REG_SP_EL0: hv_sys_reg_t = 0xc208;
-
-/// The value that identifies register AFSR0_EL1.
-pub const HV_SYS_REG_AFSR0_EL1: hv_sys_reg_t = 0xc288;
-
-/// The value that identifies register AFSR1_EL1.
-pub const HV_SYS_REG_AFSR1_EL1: hv_sys_reg_t = 0xc289;
-
-/// The value that identifies register ESR_EL1.
-pub const HV_SYS_REG_ESR_EL1: hv_sys_reg_t = 0xc290;
-
-/// The value that identifies register FAR_EL1.
-pub const HV_SYS_REG_FAR_EL1: hv_sys_reg_t = 0xc300;
-
-/// The value that identifies register PAR_EL1.
-pub const HV_SYS_REG_PAR_EL1: hv_sys_reg_t = 0xc3a0;
-
-/// The value that identifies register MAIR_EL1.
-pub const HV_SYS_REG_MAIR_EL1: hv_sys_reg_t = 0xc510;
-
-/// The value that identifies register AMAIR_EL1.
-pub const HV_SYS_REG_AMAIR_EL1: hv_sys_reg_t = 0xc518;
-
-/// The value that identifies register VBAR_EL1.
-pub const HV_SYS_REG_VBAR_EL1: hv_sys_reg_t = 0xc600;
-
-/// The value that identifies register CONTEXTIDR_EL1.
-pub const HV_SYS_REG_CONTEXTIDR_EL1: hv_sys_reg_t = 0xc681;
-
-/// The value that identifies register TPIDR_EL1.
-pub const HV_SYS_REG_TPIDR_EL1: hv_sys_reg_t = 0xc684;
-
-/// The value that identifies register CNTKCTL_EL1.
-pub const HV_SYS_REG_CNTKCTL_EL1: hv_sys_reg_t = 0xc708;
-
-/// The value that identifies register CSSELR_EL1.
-pub const HV_SYS_REG_CSSELR_EL1: hv_sys_reg_t = 0xd000;
-
-/// The value that identifies register TPIDR_EL0.
-pub const HV_SYS_REG_TPIDR_EL0: hv_sys_reg_t = 0xde82;
-
-/// The value that identifies register TPIDRRO_EL0.
-pub const HV_SYS_REG_TPIDRRO_EL0: hv_sys_reg_t = 0xde83;
-
-/// The value that identifies register CNTV_CTL_EL0.
-pub const HV_SYS_REG_CNTV_CTL_EL0: hv_sys_reg_t = 0xdf19;
-
-/// The value that identifies register CNTV_CVAL_EL0.
-pub const HV_SYS_REG_CNTV_CVAL_EL0: hv_sys_reg_t = 0xdf1a;
-
-/// The value that identifies register SP_EL1.
-pub const HV_SYS_REG_SP_EL1: hv_sys_reg_t = 0xe208;
-
-/// An ARM IRQ.
-pub const HV_INTERRUPT_TYPE_IRQ: hv_interrupt_type_t = 0;
-
-/// An ARM FIQ.
-pub const HV_INTERRUPT_TYPE_FIQ: hv_interrupt_type_t = 1;
-
-/// Data cache.
-pub const HV_CACHE_TYPE_DATA: hv_cache_type_t = 0;
-
-/// Instruction cache.
-pub const HV_CACHE_TYPE_INSTRUCTION: hv_cache_type_t = 1;
-
-/// Success.
-pub const HV_SUCCESS: hv_return_t = 0;
-
-/// Hypervisor Error.
-pub const HV_ERROR: hv_return_t = 0xfae94001;
-
-/// Busy.
-pub const HV_BUSY: hv_return_t = 0xfae94002;
-
-/// Bad argument.
-pub const HV_BAD_ARGUMENT: hv_return_t = 0xfae94003;
-
-/// Illegal guest state.
-pub const HV_ILLEGAL_GUEST_STATE: hv_return_t = 0xfae94004;
-
-/// No resources.
-pub const HV_NO_RESOURCES: hv_return_t = 0xfae94005;
-
-/// No device.
-pub const HV_NO_DEVICE: hv_return_t = 0xfae94006;
-
-/// Denied.
-pub const HV_DENIED: hv_return_t = 0xfae94007;
-
-/// Unsupported.
-pub const HV_UNSUPPORTED: hv_return_t = 0xfae9400f;
-
-/// Read memory permission.
-pub const HV_MEMORY_READ: hv_memory_flags_t = 1 << 0;
-
-/// Write memory permission.
-pub const HV_MEMORY_WRITE: hv_memory_flags_t = 1 << 1;
-
-/// Execute memory permission.
-pub const HV_MEMORY_EXEC: hv_memory_flags_t = 1 << 2;
-
-/// The value that identifies feature register ID_AA64DFR0_EL1.
-pub const HV_FEATURE_REG_ID_AA64DFR0_EL1: hv_feature_reg_t = 0;
-
-/// The value that identifies feature register ID_AA64DFR1_EL1.
-pub const HV_FEATURE_REG_ID_AA64DFR1_EL1: hv_feature_reg_t = 1;
-
-/// The value that identifies feature register ID_AA64ISAR0_EL1.
-pub const HV_FEATURE_REG_ID_AA64ISAR0_EL1: hv_feature_reg_t = 2;
-
-/// The value that identifies feature register ID_AA64ISAR1_EL1.
-pub const HV_FEATURE_REG_ID_AA64ISAR1_EL1: hv_feature_reg_t = 3;
-
-/// The value that identifies feature register ID_AA64MMFR0_EL1.
-pub const HV_FEATURE_REG_ID_AA64MMFR0_EL1: hv_feature_reg_t = 4;
-
-/// The value that identifies feature register ID_AA64MMFR1_EL1.
-pub const HV_FEATURE_REG_ID_AA64MMFR1_EL1: hv_feature_reg_t = 5;
-
-/// The value that identifies feature register ID_AA64MMFR2_EL1.
-pub const HV_FEATURE_REG_ID_AA64MMFR2_EL1: hv_feature_reg_t = 6;
-
-/// The value that identifies feature register ID_AA64PFR0_EL1.
-pub const HV_FEATURE_REG_ID_AA64PFR0_EL1: hv_feature_reg_t = 7;
-
-/// The value that identifies feature register ID_AA64PFR1_EL1.
-pub const HV_FEATURE_REG_ID_AA64PFR1_EL1: hv_feature_reg_t = 8;
-
-/// The value that identifies feature register CTR_EL0.
-pub const HV_FEATURE_REG_CTR_EL0: hv_feature_reg_t = 9;
-
-/// The value that identifies feature register CLIDR_EL1.
-pub const HV_FEATURE_REG_CLIDR_EL1: hv_feature_reg_t = 10;
-
-/// The value that identifies feature register DCZID_EL0.
-pub const HV_FEATURE_REG_DCZID_EL0: hv_feature_reg_t = 11;
-
-extern "C" {
-
-	// VM APIs
-
-	/// Creates a VM instance for the current process.
-	pub fn hv_vm_create(config: hv_vm_config_t) -> hv_return_t;
-
-	/// Destroys the VM instance associated with the current process.
-	pub fn hv_vm_destroy() -> hv_return_t;
-
-	/// Maps a region in the virtual address space of the current process into the guest physical address space of the VM.
-	pub fn hv_vm_map(
-		address: *mut c_void,
-		ipa: hv_ipa_t,
-		size: usize,
-		flags: hv_memory_flags_t,
-	) -> hv_return_t;
-
-	/// Unmaps a region in the guest physical address space of the VM.
-	pub fn hv_vm_unmap(ipa: hv_ipa_t, size: usize) -> hv_return_t;
-
-	/// Modifies the permissions of a region in the guest physical address space of the VM.
-	pub fn hv_vm_protect(ipa: hv_ipa_t, size: usize, flags: hv_memory_flags_t) -> hv_return_t;
-
-	// vCPU configuration APIs
-
-	/// Creates a vCPU configuration.
-	pub fn hv_vcpu_config_create() -> hv_vcpu_config_t;
-
-	/// Gets the value of a feature register.
-	pub fn hv_vcpu_config_get_feature_reg(
-		config: hv_vcpu_config_t,
-		feature_register: hv_feature_reg_t,
-		value: *mut u64,
-	) -> hv_return_t;
-
-	/// Return the given CCSIDR_EL1 for the given cache type.
-	pub fn hv_vcpu_config_get_ccsidr_el1_sys_reg_values(
-		config: hv_vcpu_config_t,
-		cache_type: hv_cache_type_t,
-		values: *mut u64,
-	) -> hv_return_t;
-
-	// vCPU APIs
-
-	/// Creates a vCPU instance for the current thread.
-	pub fn hv_vcpu_create(
-		vcpu: *mut hv_vcpu_t,
-		exit: *mut *const hv_vcpu_exit_t,
-		config: *const hv_vcpu_config_t,
-	) -> hv_return_t;
-
-	/// Destroys the vCPU instance associated with the current thread.
-	pub fn hv_vcpu_destroy(vcpu: hv_vcpu_t) -> hv_return_t;
-
-	/// Gets the current value of a vCPU register.
-	pub fn hv_vcpu_get_reg(vcpu: hv_vcpu_t, reg: hv_reg_t, value: *mut u64) -> hv_return_t;
-
-	/// Sets the value of a vCPU register.
-	pub fn hv_vcpu_set_reg(vcpu: hv_vcpu_t, reg: hv_reg_t, value: u64) -> hv_return_t;
-
-	// TODO: SIMD APIs
-	//pub fn hv_vcpu_get_simd_fp_reg(vcpu: hv_vcpu_t, reg: hv_simd_fp_reg_t, value: *mut hv_simd_fp_uchar16_t) -> hv_return_t;
-	//pub fn hv_vcpu_set_simd_fp_reg(vcpu: hv_vcpu_t, reg: hv_simd_fp_reg_t, value: hv_simd_fp_uchar16_t) -> hv_return_t;
-
-	/// Gets the current value of a vCPU system register.
-	pub fn hv_vcpu_get_sys_reg(vcpu: hv_vcpu_t, reg: hv_sys_reg_t, value: *mut u64) -> hv_return_t;
-
-	/// Sets the value of a vCPU system register.
-	pub fn hv_vcpu_set_sys_reg(vcpu: hv_vcpu_t, reg: hv_sys_reg_t, value: u64) -> hv_return_t;
-
-	/// Gets pending interrupts for a vCPU.
-	pub fn hv_vcpu_get_pending_interrupt(
-		vcpu: hv_vcpu_t,
-		interrupt: hv_interrupt_type_t,
-		pending: *mut bool,
-	) -> hv_return_t;
-
-	/// Sets pending interrupts for a vCPU.
-	pub fn hv_vcpu_set_pending_interrupt(
-		vcpu: hv_vcpu_t,
-		interrupt: hv_interrupt_type_t,
-		pending: bool,
-	) -> hv_return_t;
-
-	/// Gets whether debug exceptions exit the guest.
-	pub fn hv_vcpu_get_trap_debug_exceptions(vcpu: hv_vcpu_t, value: *mut bool) -> hv_return_t;
-
-	/// Sets whether debug exceptions exit the guest.
-	pub fn hv_vcpu_set_trap_debug_exceptions(vcpu: hv_vcpu_t, value: bool) -> hv_return_t;
-
-	/// Gets whether debug-register accesses exit the guest.
-	pub fn hv_vcpu_get_trap_debug_reg_accesses(vcpu: hv_vcpu_t, value: *mut bool) -> hv_return_t;
-
-	/// Sets whether debug-register accesses exit the guest.
-	pub fn hv_vcpu_set_trap_debug_reg_accesses(vcpu: hv_vcpu_t, value: bool) -> hv_return_t;
-
-	/// Starts the execution of a vCPU.
-	pub fn hv_vcpu_run(vcpu: hv_vcpu_t) -> hv_return_t;
-
-	/// Forces an immediate exit of a set of vCPUs of the VM.
-	pub fn hv_vcpus_exit(vcpus: *const hv_vcpu_t, vcpu_count: u32) -> hv_return_t;
-
-	/// Returns, the cumulative execution time of a vCPU in mach_absolute_time().
-	pub fn hv_vcpu_get_exec_time(vcpu: hv_vcpu_t, time: *mut u64) -> hv_return_t;
-
-	/// Gets the virtual timer mask.
-	pub fn hv_vcpu_get_vtimer_mask(vcpu: hv_vcpu_t, vtimer_is_masked: *mut bool) -> hv_return_t;
-
-	/// Sets the virtual timer mask.
-	pub fn hv_vcpu_set_vtimer_mask(vcpu: hv_vcpu_t, vtimer_is_masked: bool) -> hv_return_t;
-
-	/// Gets the virtual timer offset.
-	pub fn hv_vcpu_get_vtimer_offset(vcpu: hv_vcpu_t, vtimer_offset: *mut u64) -> hv_return_t;
-
-	/// Sets the virtual timer offset.
-	pub fn hv_vcpu_set_vtimer_offset(vcpu: hv_vcpu_t, vtimer_offset: u64) -> hv_return_t;
+	/// CNTV_CTL_EL0 register.
+	CNTV_CTL_EL0,
+
+	/// CNTV_CVAL_EL0 register.
+	CNTV_CVAL_EL0,
+
+	/// SP_EL1 register.
+	SP_EL1,
+}
+
+impl From<SystemRegister> for hv_sys_reg_t {
+	fn from(value: SystemRegister) -> hv_sys_reg_t {
+		match value {
+			SystemRegister::DBGBVR0_EL1 => HV_SYS_REG_DBGBVR0_EL1,
+			SystemRegister::DBGBCR0_EL1 => HV_SYS_REG_DBGBCR0_EL1,
+			SystemRegister::DBGWVR0_EL1 => HV_SYS_REG_DBGWVR0_EL1,
+			SystemRegister::DBGWCR0_EL1 => HV_SYS_REG_DBGWCR0_EL1,
+			SystemRegister::DBGBVR1_EL1 => HV_SYS_REG_DBGBVR1_EL1,
+			SystemRegister::DBGBCR1_EL1 => HV_SYS_REG_DBGBCR1_EL1,
+			SystemRegister::DBGWVR1_EL1 => HV_SYS_REG_DBGWVR1_EL1,
+			SystemRegister::DBGWCR1_EL1 => HV_SYS_REG_DBGWCR1_EL1,
+			SystemRegister::MDCCINT_EL1 => HV_SYS_REG_MDCCINT_EL1,
+			SystemRegister::MDSCR_EL1 => HV_SYS_REG_MDSCR_EL1,
+			SystemRegister::DBGBVR2_EL1 => HV_SYS_REG_DBGBVR2_EL1,
+			SystemRegister::DBGBCR2_EL1 => HV_SYS_REG_DBGBCR2_EL1,
+			SystemRegister::DBGWVR2_EL1 => HV_SYS_REG_DBGWVR2_EL1,
+			SystemRegister::DBGWCR2_EL1 => HV_SYS_REG_DBGWCR2_EL1,
+			SystemRegister::DBGBVR3_EL1 => HV_SYS_REG_DBGBVR3_EL1,
+			SystemRegister::DBGBCR3_EL1 => HV_SYS_REG_DBGBCR3_EL1,
+			SystemRegister::DBGWVR3_EL1 => HV_SYS_REG_DBGWVR3_EL1,
+			SystemRegister::DBGWCR3_EL1 => HV_SYS_REG_DBGWCR3_EL1,
+			SystemRegister::DBGBVR4_EL1 => HV_SYS_REG_DBGBVR4_EL1,
+			SystemRegister::DBGBCR4_EL1 => HV_SYS_REG_DBGBCR4_EL1,
+			SystemRegister::DBGWVR4_EL1 => HV_SYS_REG_DBGWVR4_EL1,
+			SystemRegister::DBGWCR4_EL1 => HV_SYS_REG_DBGWCR4_EL1,
+			SystemRegister::DBGBVR5_EL1 => HV_SYS_REG_DBGBVR5_EL1,
+			SystemRegister::DBGBCR5_EL1 => HV_SYS_REG_DBGBCR5_EL1,
+			SystemRegister::DBGWVR5_EL1 => HV_SYS_REG_DBGWVR5_EL1,
+			SystemRegister::DBGWCR5_EL1 => HV_SYS_REG_DBGWCR5_EL1,
+			SystemRegister::DBGBVR6_EL1 => HV_SYS_REG_DBGBVR6_EL1,
+			SystemRegister::DBGBCR6_EL1 => HV_SYS_REG_DBGBCR6_EL1,
+			SystemRegister::DBGWVR6_EL1 => HV_SYS_REG_DBGWVR6_EL1,
+			SystemRegister::DBGWCR6_EL1 => HV_SYS_REG_DBGWCR6_EL1,
+			SystemRegister::DBGBVR7_EL1 => HV_SYS_REG_DBGBVR7_EL1,
+			SystemRegister::DBGBCR7_EL1 => HV_SYS_REG_DBGBCR7_EL1,
+			SystemRegister::DBGWVR7_EL1 => HV_SYS_REG_DBGWVR7_EL1,
+			SystemRegister::DBGWCR7_EL1 => HV_SYS_REG_DBGWCR7_EL1,
+			SystemRegister::DBGBVR8_EL1 => HV_SYS_REG_DBGBVR8_EL1,
+			SystemRegister::DBGBCR8_EL1 => HV_SYS_REG_DBGBCR8_EL1,
+			SystemRegister::DBGWVR8_EL1 => HV_SYS_REG_DBGWVR8_EL1,
+			SystemRegister::DBGWCR8_EL1 => HV_SYS_REG_DBGWCR8_EL1,
+			SystemRegister::DBGBVR9_EL1 => HV_SYS_REG_DBGBVR9_EL1,
+			SystemRegister::DBGBCR9_EL1 => HV_SYS_REG_DBGBCR9_EL1,
+			SystemRegister::DBGWVR9_EL1 => HV_SYS_REG_DBGWVR9_EL1,
+			SystemRegister::DBGWCR9_EL1 => HV_SYS_REG_DBGWCR9_EL1,
+			SystemRegister::DBGBVR10_EL1 => HV_SYS_REG_DBGBVR10_EL1,
+			SystemRegister::DBGBCR10_EL1 => HV_SYS_REG_DBGBCR10_EL1,
+			SystemRegister::DBGWVR10_EL1 => HV_SYS_REG_DBGWVR10_EL1,
+			SystemRegister::DBGWCR10_EL1 => HV_SYS_REG_DBGWCR10_EL1,
+			SystemRegister::DBGBVR11_EL1 => HV_SYS_REG_DBGBVR11_EL1,
+			SystemRegister::DBGBCR11_EL1 => HV_SYS_REG_DBGBCR11_EL1,
+			SystemRegister::DBGWVR11_EL1 => HV_SYS_REG_DBGWVR11_EL1,
+			SystemRegister::DBGWCR11_EL1 => HV_SYS_REG_DBGWCR11_EL1,
+			SystemRegister::DBGBVR12_EL1 => HV_SYS_REG_DBGBVR12_EL1,
+			SystemRegister::DBGBCR12_EL1 => HV_SYS_REG_DBGBCR12_EL1,
+			SystemRegister::DBGWVR12_EL1 => HV_SYS_REG_DBGWVR12_EL1,
+			SystemRegister::DBGWCR12_EL1 => HV_SYS_REG_DBGWCR12_EL1,
+			SystemRegister::DBGBVR13_EL1 => HV_SYS_REG_DBGBVR13_EL1,
+			SystemRegister::DBGBCR13_EL1 => HV_SYS_REG_DBGBCR13_EL1,
+			SystemRegister::DBGWVR13_EL1 => HV_SYS_REG_DBGWVR13_EL1,
+			SystemRegister::DBGWCR13_EL1 => HV_SYS_REG_DBGWCR13_EL1,
+			SystemRegister::DBGBVR14_EL1 => HV_SYS_REG_DBGBVR14_EL1,
+			SystemRegister::DBGBCR14_EL1 => HV_SYS_REG_DBGBCR14_EL1,
+			SystemRegister::DBGWVR14_EL1 => HV_SYS_REG_DBGWVR14_EL1,
+			SystemRegister::DBGWCR14_EL1 => HV_SYS_REG_DBGWCR14_EL1,
+			SystemRegister::DBGBVR15_EL1 => HV_SYS_REG_DBGBVR15_EL1,
+			SystemRegister::DBGBCR15_EL1 => HV_SYS_REG_DBGBCR15_EL1,
+			SystemRegister::DBGWVR15_EL1 => HV_SYS_REG_DBGWVR15_EL1,
+			SystemRegister::DBGWCR15_EL1 => HV_SYS_REG_DBGWCR15_EL1,
+			SystemRegister::MIDR_EL1 => HV_SYS_REG_MIDR_EL1,
+			SystemRegister::MPIDR_EL1 => HV_SYS_REG_MPIDR_EL1,
+			SystemRegister::ID_AA64PFR0_EL1 => HV_SYS_REG_ID_AA64PFR0_EL1,
+			SystemRegister::ID_AA64PFR1_EL1 => HV_SYS_REG_ID_AA64PFR1_EL1,
+			SystemRegister::ID_AA64DFR0_EL1 => HV_SYS_REG_ID_AA64DFR0_EL1,
+			SystemRegister::ID_AA64DFR1_EL1 => HV_SYS_REG_ID_AA64DFR1_EL1,
+			SystemRegister::ID_AA64ISAR0_EL1 => HV_SYS_REG_ID_AA64ISAR0_EL1,
+			SystemRegister::ID_AA64ISAR1_EL1 => HV_SYS_REG_ID_AA64ISAR1_EL1,
+			SystemRegister::ID_AA64MMFR0_EL1 => HV_SYS_REG_ID_AA64MMFR0_EL1,
+			SystemRegister::ID_AA64MMFR1_EL1 => HV_SYS_REG_ID_AA64MMFR1_EL1,
+			SystemRegister::ID_AA64MMFR2_EL1 => HV_SYS_REG_ID_AA64MMFR2_EL1,
+			SystemRegister::SCTLR_EL1 => HV_SYS_REG_SCTLR_EL1,
+			SystemRegister::CPACR_EL1 => HV_SYS_REG_CPACR_EL1,
+			SystemRegister::TTBR0_EL1 => HV_SYS_REG_TTBR0_EL1,
+			SystemRegister::TTBR1_EL1 => HV_SYS_REG_TTBR1_EL1,
+			SystemRegister::TCR_EL1 => HV_SYS_REG_TCR_EL1,
+			SystemRegister::APIAKEYLO_EL1 => HV_SYS_REG_APIAKEYLO_EL1,
+			SystemRegister::APIAKEYHI_EL1 => HV_SYS_REG_APIAKEYHI_EL1,
+			SystemRegister::APIBKEYLO_EL1 => HV_SYS_REG_APIBKEYLO_EL1,
+			SystemRegister::APIBKEYHI_EL1 => HV_SYS_REG_APIBKEYHI_EL1,
+			SystemRegister::APDAKEYLO_EL1 => HV_SYS_REG_APDAKEYLO_EL1,
+			SystemRegister::APDAKEYHI_EL1 => HV_SYS_REG_APDAKEYHI_EL1,
+			SystemRegister::APDBKEYLO_EL1 => HV_SYS_REG_APDBKEYLO_EL1,
+			SystemRegister::APDBKEYHI_EL1 => HV_SYS_REG_APDBKEYHI_EL1,
+			SystemRegister::APGAKEYLO_EL1 => HV_SYS_REG_APGAKEYLO_EL1,
+			SystemRegister::APGAKEYHI_EL1 => HV_SYS_REG_APGAKEYHI_EL1,
+			SystemRegister::SPSR_EL1 => HV_SYS_REG_SPSR_EL1,
+			SystemRegister::ELR_EL1 => HV_SYS_REG_ELR_EL1,
+			SystemRegister::SP_EL0 => HV_SYS_REG_SP_EL0,
+			SystemRegister::AFSR0_EL1 => HV_SYS_REG_AFSR0_EL1,
+			SystemRegister::AFSR1_EL1 => HV_SYS_REG_AFSR1_EL1,
+			SystemRegister::ESR_EL1 => HV_SYS_REG_ESR_EL1,
+			SystemRegister::FAR_EL1 => HV_SYS_REG_FAR_EL1,
+			SystemRegister::PAR_EL1 => HV_SYS_REG_PAR_EL1,
+			SystemRegister::MAIR_EL1 => HV_SYS_REG_MAIR_EL1,
+			SystemRegister::AMAIR_EL1 => HV_SYS_REG_AMAIR_EL1,
+			SystemRegister::VBAR_EL1 => HV_SYS_REG_VBAR_EL1,
+			SystemRegister::CONTEXTIDR_EL1 => HV_SYS_REG_CONTEXTIDR_EL1,
+			SystemRegister::TPIDR_EL1 => HV_SYS_REG_TPIDR_EL1,
+			SystemRegister::CNTKCTL_EL1 => HV_SYS_REG_CNTKCTL_EL1,
+			SystemRegister::CSSELR_EL1 => HV_SYS_REG_CSSELR_EL1,
+			SystemRegister::TPIDR_EL0 => HV_SYS_REG_TPIDR_EL0,
+			SystemRegister::TPIDRRO_EL0 => HV_SYS_REG_TPIDRRO_EL0,
+			SystemRegister::CNTV_CTL_EL0 => HV_SYS_REG_CNTV_CTL_EL0,
+			SystemRegister::CNTV_CVAL_EL0 => HV_SYS_REG_CNTV_CVAL_EL0,
+			SystemRegister::SP_EL1 => HV_SYS_REG_SP_EL1,
+		}
+	}
+}
+
+impl VirtualCpu {
+	pub fn new() -> Result<VirtualCpu, Error> {
+		let handle: hv_vcpu_config_t = core::ptr::null_mut();
+		let mut vcpu_handle: hv_vcpu_t = 0;
+		let mut vcpu_exit: *const hv_vcpu_exit_t = core::ptr::null_mut();
+
+		match_error_code(unsafe { hv_vcpu_create(&mut vcpu_handle, &mut vcpu_exit, &handle) })?;
+
+		Ok(VirtualCpu {
+			id: vcpu_handle,
+			vcpu_exit: vcpu_exit,
+		})
+	}
+
+	pub fn get_id(&self) -> hv_vcpu_t {
+		self.id
+	}
+
+	pub fn exit_reason(&self) -> VirtualCpuExitReason {
+		VirtualCpuExitReason::from(unsafe { *self.vcpu_exit })
+	}
+
+	/// Returns the current value of an architectural aarch64 register
+	/// of the VirtualCpu
+	pub fn read_register(&self, reg: Register) -> Result<u64, Error> {
+		let mut value: u64 = 0;
+
+		match_error_code(unsafe {
+			hv_vcpu_get_reg(self.id, hv_reg_t::from(reg), &mut value as *mut u64)
+		})?;
+
+		Ok(value)
+	}
+
+	/// Sets the value of an architectural x86 register of the VirtualCpu
+	pub fn write_register(&self, reg: Register, value: u64) -> Result<(), Error> {
+		match_error_code(unsafe { hv_vcpu_set_reg(self.id, hv_reg_t::from(reg), value) })
+	}
+
+	/// Gets a system register value.
+	pub fn read_system_register(&self, reg: SystemRegister) -> Result<u64, Error> {
+		let mut value: u64 = 0;
+
+		match_error_code(unsafe {
+			hv_vcpu_get_sys_reg(self.id, hv_sys_reg_t::from(reg), &mut value as *mut u64)
+		})?;
+
+		Ok(value)
+	}
+
+	/// Gets a system register value.
+	pub fn write_system_register(&self, reg: SystemRegister, value: u64) -> Result<(), Error> {
+		match_error_code(unsafe { hv_vcpu_set_sys_reg(self.id, hv_sys_reg_t::from(reg), value) })
+	}
 }

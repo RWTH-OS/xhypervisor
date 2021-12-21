@@ -15,3 +15,4 @@ build = "build.rs"
 
 [dependencies]
 libc = "0.2.82"
+thiserror = "1.0"

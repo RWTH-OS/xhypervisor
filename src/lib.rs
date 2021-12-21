@@ -55,6 +55,7 @@ pub mod aarch64;
 pub mod x86_64;
 
 use core::fmt;
+use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
 use self::x86_64::ffi::*;

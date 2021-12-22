@@ -14,6 +14,7 @@ fn vm_create() {
 			0x40, 0x00, 0x80, 0xD2, // mov x0, #2
 			0x02, 0x00, 0x00, 0xD4, // hvc #0
 		];
+		let sz = std::mem::size_of_val(&el1_user_payload);
 		const EL1_USER_PAYLOAD_ADDRESS: hv_ipa_t = 0x20000;
 
 		create_vm().unwrap();
@@ -25,7 +26,8 @@ fn vm_create() {
 		println!("allocating memory at {:?}", mem_raw);
 		//map the vec at address 0
 		let mem = slice::from_raw_parts_mut(mem_raw, capacity);
-		mem[EL1_USER_PAYLOAD_ADDRESS as usize..].clone_from_slice(&el1_user_payload);
+		mem[EL1_USER_PAYLOAD_ADDRESS as usize..EL1_USER_PAYLOAD_ADDRESS as usize + sz]
+			.clone_from_slice(&el1_user_payload);
 		map_mem(mem, 0, MemPerm::ExecAndWrite).unwrap();
 
 		let vcpu = VirtualCpu::new().unwrap();

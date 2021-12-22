@@ -6,17 +6,22 @@ extern crate xhypervisor;
 use std::alloc::{alloc, dealloc, Layout};
 use std::io::Write;
 use std::slice;
+#[cfg(target_arch = "x86_64")]
 use xhypervisor::consts::vmcs::*;
+#[cfg(target_arch = "x86_64")]
 use xhypervisor::consts::vmx_cap::*;
+#[cfg(target_arch = "x86_64")]
 use xhypervisor::consts::vmx_exit::*;
 use xhypervisor::ffi::*;
 use xhypervisor::*;
 
 /* desired control word constrained by hardware/hypervisor capabilities */
+#[cfg(target_arch = "x86_64")]
 fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
 	(ctrl | (cap & 0xffffffff)) & (cap >> 32)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[test]
 fn vm_create() {
 	unsafe {
@@ -55,9 +60,9 @@ fn vm_create() {
 		println!("allocating memory at {:?}", mem_raw);
 		//map the vec at address 0
 		let mem = slice::from_raw_parts_mut(mem_raw, capacity);
-		map_mem(mem, 0, &MemPerm::ExecAndWrite).unwrap();
+		map_mem(mem, 0, MemPerm::ExecAndWrite).unwrap();
 
-		let vcpu = vCPU::new().unwrap();
+		let vcpu = VirtualCpu::new().unwrap();
 
 		/* set VMCS control fields */
 		vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0))

@@ -187,7 +187,7 @@ impl VirtualCpu {
 		match_error_code(unsafe { hv_vcpu_write_register(self.id, (*reg).clone(), value) })
 	}
 
-    /// Returns the current value of a VMCS field of the VirtualCpu
+	/// Returns the current value of a VMCS field of the VirtualCpu
 	pub fn read_vmcs(&self, field: u32) -> Result<u64, Error> {
 		let mut value: u64 = 0;
 

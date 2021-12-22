@@ -1,20 +1,11 @@
-//! Example hypervisor and 16 bits VM from https://github.com/mist64/hvdos/blob/master/hvdos.c
-//! original blog post at http://www.pagetable.com/?p=764
-//! guest VM code taken from https://lwn.net/Articles/658511/
+//! Example is derived from https://github.com/Thog/ahv
 extern crate xhypervisor;
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::slice;
-#[cfg(target_arch = "x86_64")]
-use xhypervisor::consts::vmcs::*;
-#[cfg(target_arch = "x86_64")]
-use xhypervisor::consts::vmx_cap::*;
-#[cfg(target_arch = "x86_64")]
-use xhypervisor::consts::vmx_exit::*;
 use xhypervisor::ffi::*;
 use xhypervisor::*;
 
-// Example is derived from https://github.com/Thog/ahv
 #[cfg(target_arch = "aarch64")]
 #[test]
 fn vm_create() {

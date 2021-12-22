@@ -24,10 +24,11 @@ fn vm_create() {
 		let mem_raw = alloc(layout);
 
 		println!("allocating memory at {:?}", mem_raw);
-		//map the vec at address 0
+		//copy kernel to the VM memory
 		let mem = slice::from_raw_parts_mut(mem_raw, capacity);
 		mem[EL1_USER_PAYLOAD_ADDRESS as usize..EL1_USER_PAYLOAD_ADDRESS as usize + sz]
 			.clone_from_slice(&el1_user_payload);
+		//map the vec at address 0
 		map_mem(mem, 0, MemPerm::ExecAndWrite).unwrap();
 
 		let vcpu = VirtualCpu::new().unwrap();

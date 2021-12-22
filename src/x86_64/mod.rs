@@ -13,7 +13,7 @@ pub fn create_vm() -> Result<(), Error> {
 
 /// Maps a region in the virtual address space of the current task into the guest physical
 /// address space of the virutal machine
-pub fn map_mem(mem: &[u8], gpa: u64, mem_perm: &MemPerm) -> Result<(), Error> {
+pub fn map_mem(mem: &[u8], gpa: u64, mem_perm: MemPerm) -> Result<(), Error> {
 	match_error_code(unsafe {
 		hv_vm_map(
 			mem.as_ptr() as *const c_void,
@@ -26,7 +26,7 @@ pub fn map_mem(mem: &[u8], gpa: u64, mem_perm: &MemPerm) -> Result<(), Error> {
 
 /// Modifies the permissions of a region in the guest physical address space of the virtual
 /// machine
-pub fn protect_mem(gpa: u64, size: usize, mem_perm: &MemPerm) -> Result<(), Error> {
+pub fn protect_mem(gpa: u64, size: usize, mem_perm: MemPerm) -> Result<(), Error> {
 	match_error_code(unsafe {
 		hv_vm_protect(gpa as hv_gpaddr_t, size as size_t, match_MemPerm(mem_perm))
 	})
@@ -185,6 +185,15 @@ impl VirtualCpu {
 	/// Sets the value of an architectural x86 register of the VirtualCpu
 	pub fn write_register(&self, reg: &Register, value: u64) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_write_register(self.id, (*reg).clone(), value) })
+	}
+
+    /// Returns the current value of a VMCS field of the VirtualCpu
+	pub fn read_vmcs(&self, field: u32) -> Result<u64, Error> {
+		let mut value: u64 = 0;
+
+		match_error_code(unsafe { hv_vmx_vcpu_read_vmcs(self.get_id(), field, &mut value) })?;
+
+		Ok(value)
 	}
 
 	/// Sets the value of a VMCS field of the VirtualCpu

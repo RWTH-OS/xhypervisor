@@ -104,6 +104,7 @@ pub fn destroy_vm() -> Result<(), Error> {
 }
 
 /// Guest physical memory region permissions
+#[derive(Debug)]
 pub enum MemPerm {
 	/// Read
 	Read,
@@ -119,13 +120,13 @@ pub enum MemPerm {
 
 #[allow(non_snake_case)]
 #[inline(always)]
-fn match_MemPerm(mem_perm: &MemPerm) -> u64 {
+fn match_MemPerm(mem_perm: MemPerm) -> u64 {
 	match mem_perm {
-		&MemPerm::Read => HV_MEMORY_READ,
-		&MemPerm::Write => HV_MEMORY_WRITE | HV_MEMORY_READ,
-		&MemPerm::Exec => HV_MEMORY_EXEC,
-		&MemPerm::ExecAndWrite => HV_MEMORY_EXEC | HV_MEMORY_WRITE | HV_MEMORY_READ,
-		&MemPerm::ExecAndRead => HV_MEMORY_EXEC | HV_MEMORY_READ,
+		MemPerm::Read => HV_MEMORY_READ,
+		MemPerm::Write => HV_MEMORY_WRITE | HV_MEMORY_READ,
+		MemPerm::Exec => HV_MEMORY_EXEC,
+		MemPerm::ExecAndWrite => HV_MEMORY_EXEC | HV_MEMORY_WRITE | HV_MEMORY_READ,
+		MemPerm::ExecAndRead => HV_MEMORY_EXEC | HV_MEMORY_READ,
 	}
 }
 
@@ -138,16 +139,6 @@ impl VirtualCpu {
 	/// Executes the VirtualCpu
 	pub fn run(&self) -> Result<(), Error> {
 		match_error_code(unsafe { hv_vcpu_run(self.get_id()) })
-	}
-
-	/// Returns the current value of a VMCS field of the VirtualCpu
-	#[cfg(target_arch = "x86_64")]
-	pub fn read_vmcs(&self, field: u32) -> Result<u64, Error> {
-		let mut value: u64 = 0;
-
-		match_error_code(unsafe { hv_vmx_vcpu_read_vmcs(self.get_id(), field, &mut value) })?;
-
-		Ok(value)
 	}
 }
 

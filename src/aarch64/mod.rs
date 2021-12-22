@@ -12,7 +12,7 @@ pub fn create_vm() -> Result<(), Error> {
 
 /// Maps a region in the virtual address space of the current task into the guest physical
 /// address space of the virutal machine
-pub fn map_mem(mem: &[u8], ipa: u64, mem_perm: &MemPerm) -> Result<(), Error> {
+pub fn map_mem(mem: &[u8], ipa: u64, mem_perm: MemPerm) -> Result<(), Error> {
 	match_error_code(unsafe {
 		hv_vm_map(
 			mem.as_ptr() as *mut c_void,
@@ -30,7 +30,7 @@ pub fn unmap_mem(ipa: u64, size: usize) -> Result<(), Error> {
 
 /// Modifies the permissions of a region in the guest physical address space of the virtual
 /// machine
-pub fn protect_mem(ipa: u64, size: usize, mem_perm: &MemPerm) -> Result<(), Error> {
+pub fn protect_mem(ipa: u64, size: usize, mem_perm: MemPerm) -> Result<(), Error> {
 	match_error_code(unsafe {
 		hv_vm_protect(ipa as hv_ipa_t, size as size_t, match_MemPerm(mem_perm))
 	})

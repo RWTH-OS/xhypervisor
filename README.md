@@ -26,6 +26,7 @@ following in your Terminal:
   ```
 
 ## Status
+- **WARNING:** The Apple Silicon support is in an early state
 - [x] Accessing x86 registers
 - [x] Accessing aarch64 registers
 - [x] x86: Accessing model-specific registers (MSRs)

@@ -1,0 +1,21 @@
+name: Format
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  format:
+    name: Format
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup show
+      - name: Format
+        run: cargo fmt --all -- --check

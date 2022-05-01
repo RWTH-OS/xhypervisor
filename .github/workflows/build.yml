@@ -1,0 +1,27 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: '0 3 * * 1'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build
+    runs-on: macos-11
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install toolchain from rust-toolchain.toml
+      run: rustup show
+    - name: Install missing targets
+      run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+    - name: Build for x86_64
+      run: cargo build --target x86_64-apple-darwin
+    - name: Build for aarch64
+      run: cargo build --target aarch64-apple-darwin

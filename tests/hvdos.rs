@@ -6,17 +6,22 @@ extern crate xhypervisor;
 use std::alloc::{alloc, dealloc, Layout};
 use std::io::Write;
 use std::slice;
+#[cfg(target_arch = "x86_64")]
 use xhypervisor::consts::vmcs::*;
+#[cfg(target_arch = "x86_64")]
 use xhypervisor::consts::vmx_cap::*;
+#[cfg(target_arch = "x86_64")]
 use xhypervisor::consts::vmx_exit::*;
 use xhypervisor::ffi::*;
 use xhypervisor::*;
 
 /* desired control word constrained by hardware/hypervisor capabilities */
+#[cfg(target_arch = "x86_64")]
 fn cap2ctrl(cap: u64, ctrl: u64) -> u64 {
 	(ctrl | (cap & 0xffffffff)) & (cap >> 32)
 }
 
+#[cfg(target_arch = "x86_64")]
 #[test]
 fn vm_create() {
 	unsafe {
@@ -55,9 +60,9 @@ fn vm_create() {
 		println!("allocating memory at {:?}", mem_raw);
 		//map the vec at address 0
 		let mem = slice::from_raw_parts_mut(mem_raw, capacity);
-		map_mem(mem, 0, &MemPerm::ExecAndWrite).unwrap();
+		map_mem(mem, 0, MemPerm::ExecAndWrite).unwrap();
 
-		let vcpu = vCPU::new().unwrap();
+		let vcpu = VirtualCpu::new().unwrap();
 
 		/* set VMCS control fields */
 		vcpu.write_vmcs(VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0))
@@ -144,14 +149,14 @@ fn vm_create() {
 		let _ = (&mut mem[256..]).write(&code);
 
 		/* set up GPRs, start at adress 0x100 */
-		vcpu.write_register(&x86Reg::RIP, 0x100).unwrap();
+		vcpu.write_register(&Register::RIP, 0x100).unwrap();
 
-		vcpu.write_register(&x86Reg::RFLAGS, 0x2).unwrap();
-		vcpu.write_register(&x86Reg::RSP, 0x0).unwrap();
+		vcpu.write_register(&Register::RFLAGS, 0x2).unwrap();
+		vcpu.write_register(&Register::RSP, 0x0).unwrap();
 
 		/* set up args for addition */
-		vcpu.write_register(&x86Reg::RAX, 0x5).unwrap();
-		vcpu.write_register(&x86Reg::RBX, 0x3).unwrap();
+		vcpu.write_register(&Register::RAX, 0x5).unwrap();
+		vcpu.write_register(&Register::RBX, 0x3).unwrap();
 
 		let mut chars = 0u8;
 		loop {
@@ -159,7 +164,7 @@ fn vm_create() {
 			let exit_reason = vcpu.read_vmcs(VMCS_RO_EXIT_REASON).unwrap() & 0xffff;
 			println!("exit reason: {}", exit_reason);
 
-			let rip = vcpu.read_register(&x86Reg::RIP).unwrap();
+			let rip = vcpu.read_register(&Register::RIP).unwrap();
 			println!("RIP at {}", rip);
 
 			if exit_reason == VMX_REASON_IRQ as u64 {
@@ -177,7 +182,7 @@ fn vm_create() {
 				}
 				let qual = vcpu.read_vmcs(VMCS_RO_EXIT_QUALIFIC).unwrap();
 				if (qual >> 16) & 0xFFFF == 0x3F8 {
-					let rax = vcpu.read_register(&x86Reg::RAX).unwrap();
+					let rax = vcpu.read_register(&Register::RAX).unwrap();
 					println!("RAX == {}", rax);
 					println!("got char: {}", (rax as u8) as char);
 
@@ -191,16 +196,16 @@ fn vm_create() {
 
 					let inst_length = vcpu.read_vmcs(VMCS_RO_VMEXIT_INSTR_LEN).unwrap();
 
-					vcpu.write_register(&x86Reg::RIP, rip + inst_length)
+					vcpu.write_register(&Register::RIP, rip + inst_length)
 						.unwrap();
 				} else {
 					println!("unrecognized IO port, exit");
 					break;
 				}
 
-				/*let rax = vcpu.read_register(&x86Reg::RAX).unwrap();
+				/*let rax = vcpu.read_register(&Register::RAX).unwrap();
 				println!("RAX == 0x{:x}", rax);
-				let rdx = vcpu.read_register(&x86Reg::RDX).unwrap();
+				let rdx = vcpu.read_register(&Register::RDX).unwrap();
 				println!("RDX == 0x{:x}", rdx);
 				println!("address 0x3f8: {:?}", &mem[0x3f8..0x408]);
 				println!("qual: {}", qual);

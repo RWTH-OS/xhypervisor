@@ -1,6 +1,6 @@
 [package]
 name = "xhypervisor"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Stefan Lankes", "Saurav Sachidanand"]
 edition = "2021"
 
@@ -15,4 +15,4 @@ build = "build.rs"
 
 [dependencies]
 libc = "0.2"
-thiserror = "1.0"
+thiserror = "2.0"

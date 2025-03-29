@@ -10,15 +10,13 @@ Derived from [ahv](https://github.com/Thog/ahv), we added the support of Apple's
 
 It binds to the [Hypervisor](https://developer.apple.com/documentation/hypervisor) framework on OS X, and exposes a safe Rust interface through the `hypervisor` module, and an unsafe foreign function interface through the `xhypervisor::ffi` module.
 
-A xhypervisor derived from the [16 bits VM](https://github.com/mist64/hvdos/blob/master/hvdos.c) is used as test example, which was original published in blog post [http://www.pagetable.com/?p=764](http://www.pagetable.com/?p=764).
-
 ## Prerequisites
 
 To use this library, you need
 
 * OS X Yosemite (10.10), or newer
 
-* a Intel processor with the VT-x feature or an Apple Silicon processor with virtualization support. To verify this, run and expect the
+* A Intel processor with the VT-x feature or an Apple Silicon processor with virtualization support. To verify this, run and expect the
 following in your Terminal:
   ```shell
   $ sysctl kern.hv_support

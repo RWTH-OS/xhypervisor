@@ -1,7 +1,7 @@
 # xhypervisor
 
 [![crates.io](https://img.shields.io/crates/v/xhypervisor.svg)](https://crates.io/crates/xhypervisor)
-[![Docs.rs](https://docs.rs/mio/badge.svg)](https://docs.rs/xhypervisor)
+[![Docs.rs](https://docs.rs/xhypervisor/badge.svg)](https://docs.rs/xhypervisor)
 [![License](https://img.shields.io/crates/l/xhypervisor.svg)](https://img.shields.io/crates/l/xhypervisor.svg)
 
 `xhypervisor` is a Rust library that taps into functionality that enables hardware-accelerated execution of virtual machines on OS X.

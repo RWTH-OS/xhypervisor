@@ -14,8 +14,7 @@ It binds to the [Hypervisor](https://developer.apple.com/documentation/hyperviso
 
 To use this library, you need
 
-* macOS 10.10, or newer
-
+* macOS 10, or newer
 * An Intel processor with the VT-x feature or an Apple Silicon processor with virtualization support. To verify this, run and expect the
 following in your Terminal:
   ```shell
@@ -38,4 +37,4 @@ following in your Terminal:
   - [x] Accessing model-specific registers (MSRs)
 - [x] Virtual aarch64 CPUs
   - [x] Executing and interrupting
-  - [x] GICv3 support (requires macOS 10.15, or newer)
+  - [x] GICv3 support (requires macOS 15, or newer)

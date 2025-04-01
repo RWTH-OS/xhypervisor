@@ -10,8 +10,52 @@ pub fn create_vm() -> Result<(), Error> {
 	match_error_code(unsafe { hv_vm_create(null_mut()) })
 }
 
+#[cfg(feature = "macos_15_0_0")]
+/// Generic interrupt controller (GIC)
+pub struct Gic(hv_gic_config_t);
+
+#[cfg(feature = "macos_15_0_0")]
+impl Gic {
+	/// Creates a generic interrupt controller (GIC)
+	pub fn new(gicd_addr: u64, gicr_base: u64, msi_base: u64) -> Result<Self, Error> {
+		let config = unsafe { hv_gic_config_create() };
+
+		let mut intid_base: u32 = 0;
+		let mut intid_count: u32 = 0;
+		match_error_code(unsafe {
+			hv_gic_get_spi_interrupt_range(&mut intid_base as *mut _, &mut intid_count as *mut _)
+		})?;
+
+		match_error_code(unsafe { hv_gic_config_set_distributor_base(config, gicd_addr) })?;
+		match_error_code(unsafe { hv_gic_config_set_redistributor_base(config, gicr_base) })?;
+		match_error_code(unsafe { hv_gic_config_set_msi_region_base(config, msi_base) })?;
+		match_error_code(unsafe {
+			hv_gic_config_set_msi_interrupt_range(config, intid_base, intid_count)
+		})?;
+		match_error_code(unsafe { hv_gic_create(config) })?;
+
+		Ok(Self(config))
+	}
+
+	/// Resets the generic interrupt controller (GIC) device.
+	pub fn reset(&self) -> Result<(), Error> {
+		match_error_code(unsafe { hv_gic_reset() })?;
+
+		Ok(())
+	}
+}
+
+#[cfg(feature = "macos_15_0_0")]
+impl Drop for Gic {
+	fn drop(&mut self) {
+		unsafe {
+			os_release(self.0);
+		}
+	}
+}
+
 /// Maps a region in the virtual address space of the current task into the guest physical
-/// address space of the virutal machine
+/// address space of the virtual machine
 pub fn map_mem(mem: &[u8], ipa: u64, mem_perm: MemPerm) -> Result<(), Error> {
 	match_error_code(unsafe {
 		hv_vm_map(
@@ -75,8 +119,11 @@ impl From<hv_vcpu_exit_t> for VirtualCpuExitReason {
 
 /// Virtual CPU
 pub struct VirtualCpu {
+	/// Virtual CPU Id
+	id: u32,
+
 	/// Virtual CPU handle
-	id: hv_vcpu_t,
+	vcpu_handle: hv_vcpu_t,
 
 	/// VirtualCPU exit informations.
 	vcpu_exit: *const hv_vcpu_exit_t,
@@ -700,21 +747,33 @@ impl From<SystemRegister> for hv_sys_reg_t {
 }
 
 impl VirtualCpu {
-	pub fn new() -> Result<VirtualCpu, Error> {
+	/// Creates a VirtualCpu instance for the current thread
+	///
+	/// `id` represents the internal numbering of the processor.
+	pub fn new(id: u32) -> Result<VirtualCpu, Error> {
 		let handle: hv_vcpu_config_t = core::ptr::null_mut();
 		let mut vcpu_handle: hv_vcpu_t = 0;
 		let mut vcpu_exit: *const hv_vcpu_exit_t = core::ptr::null_mut();
 
 		match_error_code(unsafe { hv_vcpu_create(&mut vcpu_handle, &mut vcpu_exit, &handle) })?;
 
-		Ok(VirtualCpu {
-			id: vcpu_handle,
-			vcpu_exit: vcpu_exit,
-		})
+		let vcpu = VirtualCpu {
+			id,
+			vcpu_handle,
+			vcpu_exit,
+		};
+
+		vcpu.write_system_register(SystemRegister::MPIDR_EL1, (id & 0xff).into())?;
+
+		Ok(vcpu)
 	}
 
-	pub fn get_id(&self) -> hv_vcpu_t {
+	pub fn get_id(&self) -> u32 {
 		self.id
+	}
+
+	pub fn get_handle(&self) -> hv_vcpu_t {
+		self.vcpu_handle
 	}
 
 	pub fn exit_reason(&self) -> VirtualCpuExitReason {
@@ -727,7 +786,23 @@ impl VirtualCpu {
 		let mut value: u64 = 0;
 
 		match_error_code(unsafe {
-			hv_vcpu_get_reg(self.id, hv_reg_t::from(reg), &mut value as *mut u64)
+			hv_vcpu_get_reg(
+				self.vcpu_handle,
+				hv_reg_t::from(reg),
+				&mut value as *mut u64,
+			)
+		})?;
+
+		Ok(value)
+	}
+
+	/// Read a generic interrupt controller (GIC) redistributor register.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn read_redistributor_register(&self, offset: u32) -> Result<u64, Error> {
+		let mut value: u64 = 0;
+
+		match_error_code(unsafe {
+			hv_gic_get_redistributor_reg(self.vcpu_handle, offset, &mut value as *mut u64)
 		})?;
 
 		Ok(value)
@@ -735,7 +810,7 @@ impl VirtualCpu {
 
 	/// Sets the value of an architectural x86 register of the VirtualCpu
 	pub fn write_register(&self, reg: Register, value: u64) -> Result<(), Error> {
-		match_error_code(unsafe { hv_vcpu_set_reg(self.id, hv_reg_t::from(reg), value) })
+		match_error_code(unsafe { hv_vcpu_set_reg(self.vcpu_handle, hv_reg_t::from(reg), value) })
 	}
 
 	/// Gets a system register value.
@@ -743,7 +818,11 @@ impl VirtualCpu {
 		let mut value: u64 = 0;
 
 		match_error_code(unsafe {
-			hv_vcpu_get_sys_reg(self.id, hv_sys_reg_t::from(reg), &mut value as *mut u64)
+			hv_vcpu_get_sys_reg(
+				self.vcpu_handle,
+				hv_sys_reg_t::from(reg),
+				&mut value as *mut u64,
+			)
 		})?;
 
 		Ok(value)
@@ -751,6 +830,75 @@ impl VirtualCpu {
 
 	/// Gets a system register value.
 	pub fn write_system_register(&self, reg: SystemRegister, value: u64) -> Result<(), Error> {
-		match_error_code(unsafe { hv_vcpu_set_sys_reg(self.id, hv_sys_reg_t::from(reg), value) })
+		match_error_code(unsafe {
+			hv_vcpu_set_sys_reg(self.vcpu_handle, hv_sys_reg_t::from(reg), value)
+		})
+	}
+}
+
+impl core::fmt::Debug for VirtualCpu {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		let pc = self.read_register(Register::PC).unwrap();
+		let cpsr = self.read_register(Register::CPSR).unwrap();
+		let sp = self.read_system_register(SystemRegister::SP_EL1).unwrap();
+		let sctlr = self
+			.read_system_register(SystemRegister::SCTLR_EL1)
+			.unwrap();
+		let ttbr0 = self
+			.read_system_register(SystemRegister::TTBR0_EL1)
+			.unwrap();
+		let lr = self.read_register(Register::LR).unwrap();
+		let x0 = self.read_register(Register::X0).unwrap();
+		let x1 = self.read_register(Register::X1).unwrap();
+		let x2 = self.read_register(Register::X2).unwrap();
+		let x3 = self.read_register(Register::X3).unwrap();
+		let x4 = self.read_register(Register::X4).unwrap();
+		let x5 = self.read_register(Register::X5).unwrap();
+		let x6 = self.read_register(Register::X6).unwrap();
+		let x7 = self.read_register(Register::X7).unwrap();
+		let x8 = self.read_register(Register::X8).unwrap();
+		let x9 = self.read_register(Register::X9).unwrap();
+		let x10 = self.read_register(Register::X10).unwrap();
+		let x11 = self.read_register(Register::X11).unwrap();
+		let x12 = self.read_register(Register::X12).unwrap();
+		let x13 = self.read_register(Register::X13).unwrap();
+		let x14 = self.read_register(Register::X14).unwrap();
+		let x15 = self.read_register(Register::X15).unwrap();
+		let x16 = self.read_register(Register::X16).unwrap();
+		let x17 = self.read_register(Register::X17).unwrap();
+		let x18 = self.read_register(Register::X18).unwrap();
+		let x19 = self.read_register(Register::X19).unwrap();
+		let x20 = self.read_register(Register::X20).unwrap();
+		let x21 = self.read_register(Register::X21).unwrap();
+		let x22 = self.read_register(Register::X22).unwrap();
+		let x23 = self.read_register(Register::X23).unwrap();
+		let x24 = self.read_register(Register::X24).unwrap();
+		let x25 = self.read_register(Register::X25).unwrap();
+		let x26 = self.read_register(Register::X26).unwrap();
+		let x27 = self.read_register(Register::X27).unwrap();
+		let x28 = self.read_register(Register::X28).unwrap();
+		let x29 = self.read_register(Register::X29).unwrap();
+		let x30 = self.read_register(Register::X30).unwrap();
+
+		writeln!(f, "\nRegisters of CPU {}:", (*self).get_id())?;
+		writeln!(
+			f,
+			"PC    : {pc:016x}  LR    : {lr:016x}  CPSR  : {cpsr:016x}\n\
+		 SP    : {sp:016x}  SCTLR : {sctlr:016x}  TTBR0 : {ttbr0:016x}",
+		)?;
+		writeln!(
+			f,
+			"x0    : {x0:016x}  x1    : {x1:016x}  x2    : {x2:016x}\n\
+		 x3    : {x3:016x}  x4    : {x4:016x}  x5    : {x5:016x}\n\
+		 x6    : {x6:016x}  x7    : {x7:016x}  x8    : {x8:016x}\n\
+		 x9    : {x9:016x}  x10   : {x10:016x}  x11   : {x11:016x}\n\
+		 x12   : {x12:016x}  x13   : {x13:016x}  x14   : {x14:016x}\n\
+		 x15   : {x15:016x}  x16   : {x16:016x}  x17   : {x17:016x}\n\
+		 x18   : {x18:016x}  x19   : {x19:016x}  x20   : {x20:016x}\n\
+		 x21   : {x21:016x}  x22   : {x22:016x}  x23   : {x23:016x}\n\
+		 x24   : {x24:016x}  x25   : {x25:016x}  x26   : {x26:016x}\n\
+		 x27   : {x27:016x}  x28   : {x28:016x}  x29   : {x29:016x}\n\
+		 x30   : {x30:016x}\n",
+		)
 	}
 }

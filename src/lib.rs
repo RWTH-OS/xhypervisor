@@ -54,7 +54,6 @@ pub mod aarch64;
 #[allow(non_camel_case_types)]
 pub mod x86_64;
 
-use core::fmt;
 use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
@@ -106,44 +105,47 @@ pub fn destroy_vm() -> Result<(), Error> {
 /// Guest physical memory region permissions
 #[derive(Debug)]
 pub enum MemPerm {
+	/// No access
+	None,
 	/// Read
 	Read,
-	/// Write (implies read)
+	/// Write
 	Write,
+	/// Read and write access
+	ReadWrite,
 	/// Execute
 	Exec,
-	/// Execute and write (implies read)
-	ExecAndWrite,
+	/// Execute and write
+	ExecWrite,
 	/// Execute and read
-	ExecAndRead,
+	ExecRead,
+	/// Execute, read and write
+	ExecReadWrite,
 }
 
 #[allow(non_snake_case)]
 #[inline(always)]
 fn match_MemPerm(mem_perm: MemPerm) -> u64 {
 	match mem_perm {
+		MemPerm::None => 0,
 		MemPerm::Read => HV_MEMORY_READ,
-		MemPerm::Write => HV_MEMORY_WRITE | HV_MEMORY_READ,
+		MemPerm::Write => HV_MEMORY_WRITE,
+		MemPerm::ReadWrite => HV_MEMORY_WRITE | HV_MEMORY_READ,
 		MemPerm::Exec => HV_MEMORY_EXEC,
-		MemPerm::ExecAndWrite => HV_MEMORY_EXEC | HV_MEMORY_WRITE | HV_MEMORY_READ,
-		MemPerm::ExecAndRead => HV_MEMORY_EXEC | HV_MEMORY_READ,
+		MemPerm::ExecWrite => HV_MEMORY_EXEC | HV_MEMORY_WRITE,
+		MemPerm::ExecRead => HV_MEMORY_EXEC | HV_MEMORY_READ,
+		MemPerm::ExecReadWrite => HV_MEMORY_EXEC | HV_MEMORY_READ | HV_MEMORY_WRITE,
 	}
 }
 
 impl VirtualCpu {
 	/// Destroys the VirtualCpu instance associated with the current thread
 	pub fn destroy(&self) -> Result<(), Error> {
-		match_error_code(unsafe { hv_vcpu_destroy(self.get_id()) })
+		match_error_code(unsafe { hv_vcpu_destroy(self.get_handle()) })
 	}
 
 	/// Executes the VirtualCpu
 	pub fn run(&self) -> Result<(), Error> {
-		match_error_code(unsafe { hv_vcpu_run(self.get_id()) })
-	}
-}
-
-impl fmt::Debug for VirtualCpu {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "VirtualCpu ID: {}", (*self).get_id())
+		match_error_code(unsafe { hv_vcpu_run(self.get_handle()) })
 	}
 }

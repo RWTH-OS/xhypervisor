@@ -14,9 +14,9 @@ It binds to the [Hypervisor](https://developer.apple.com/documentation/hyperviso
 
 To use this library, you need
 
-* OS X Yosemite (10.10), or newer
+* macOS 10.10, or newer
 
-* A Intel processor with the VT-x feature or an Apple Silicon processor with virtualization support. To verify this, run and expect the
+* An Intel processor with the VT-x feature or an Apple Silicon processor with virtualization support. To verify this, run and expect the
 following in your Terminal:
   ```shell
   $ sysctl kern.hv_support
@@ -24,16 +24,18 @@ following in your Terminal:
   ```
 
 ## Status
-- **WARNING:** The Apple Silicon support is in an early state
 - [x] Accessing x86 registers
 - [x] Accessing aarch64 registers
-- [x] x86: Accessing model-specific registers (MSRs)
 - [x] Mapping guest physical memory segments into guest physical address space
-- [x] Virtual CPUs
+- [x] x86: Accessing fields of Virtual Machine Control Structures (VMCS)
+- [x] Virtual x86 CPUs
   - [x] Executing and interrupting
   - [x] Force flushing cached state
   - [x] Invalidating translation lookaside buffer (TLB)
   - [x] Accessing floating point (FP) and SIMD state
   - [x] Obtaining cumulative execution time
   - [x] Synchronizing guest timestamp-counters (TSC)
-- [x] x86: Accessing fields of Virtual Machine Control Structures (VMCS)
+  - [x] Accessing model-specific registers (MSRs)
+- [x] Virtual aarch64 CPUs
+  - [x] Executing and interrupting
+  - [x] GICv3 support (requires macOS 10.15, or newer)

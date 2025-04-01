@@ -5,6 +5,12 @@ use core::ffi::c_void;
 /// vCPU configuration.
 pub type hv_vcpu_config_t = *mut c_void;
 
+/// A generic interrupt controller (GIC) configuration’s reference type.
+pub type hv_gic_config_t = *mut c_void;
+
+/// Type of an ARM GIC distributor register
+pub type hv_gic_redistributor_reg_t = u32;
+
 /// VM configuration.
 pub type hv_vm_config_t = *mut c_void;
 
@@ -669,13 +675,13 @@ pub const HV_DENIED: hv_return_t = 0xfae94007;
 pub const HV_UNSUPPORTED: hv_return_t = 0xfae9400f;
 
 /// Read memory permission.
-pub const HV_MEMORY_READ: hv_memory_flags_t = 1 << 0;
+pub const HV_MEMORY_READ: hv_memory_flags_t = 1u64 << 0;
 
 /// Write memory permission.
-pub const HV_MEMORY_WRITE: hv_memory_flags_t = 1 << 1;
+pub const HV_MEMORY_WRITE: hv_memory_flags_t = 1u64 << 1;
 
 /// Execute memory permission.
-pub const HV_MEMORY_EXEC: hv_memory_flags_t = 1 << 2;
+pub const HV_MEMORY_EXEC: hv_memory_flags_t = 1u64 << 2;
 
 /// The value that identifies feature register ID_AA64DFR0_EL1.
 pub const HV_FEATURE_REG_ID_AA64DFR0_EL1: hv_feature_reg_t = 0;
@@ -714,6 +720,8 @@ pub const HV_FEATURE_REG_CLIDR_EL1: hv_feature_reg_t = 10;
 pub const HV_FEATURE_REG_DCZID_EL0: hv_feature_reg_t = 11;
 
 extern "C" {
+	/// Release OS objects
+	pub fn os_release(obj: *const c_void);
 
 	// VM APIs
 
@@ -722,6 +730,66 @@ extern "C" {
 
 	/// Destroys the VM instance associated with the current process.
 	pub fn hv_vm_destroy() -> hv_return_t;
+
+	/// Creates a generic interrupt controller (GIC) v3 device for a VM configuration.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_create(gic_config: hv_gic_config_t) -> hv_return_t;
+
+	/// Creates a generic interrupt controller (GIC) configuration object.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_config_create() -> hv_gic_config_t;
+
+	/// Resets the generic interrupt controller (GIC) device.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_reset() -> hv_return_t;
+
+	/// Sets the generic interrupt controller (GIC) distributor region’s base address.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_config_set_distributor_base(
+		config: hv_gic_config_t,
+		ipa: hv_ipa_t,
+	) -> hv_return_t;
+
+	/// Sets the generic interrupt controller (GIC) redistributor region base address.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_config_set_redistributor_base(
+		config: hv_gic_config_t,
+		ipa: hv_ipa_t,
+	) -> hv_return_t;
+
+	/// Sets the generic interrupt controllers message signaled interrupts (MSIs) region base address.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_config_set_msi_region_base(
+		config: hv_gic_config_t,
+		msi_region_base_address: hv_ipa_t,
+	) -> hv_return_t;
+
+	/// Sets the range of message signaled interrupts (MSIs) the generic interrupt controller supports.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_config_set_msi_interrupt_range(
+		config: hv_gic_config_t,
+		msi_intid_base: u32,
+		msi_intid_count: u32,
+	) -> hv_return_t;
+
+	/// Gets the redistributor base guest physical address for the given vCPU.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_get_redistributor_base(cpu: hv_vcpu_t, ipa: hv_ipa_t) -> hv_return_t;
+
+	/// Gets the range of shared peripheral interrupts (SPIs) the generic interrupt controller supports.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_get_spi_interrupt_range(
+		spi_intid_base: *mut u32,
+		spi_intid_count: *mut u32,
+	) -> hv_return_t;
+
+	/// Read a generic interrupt controller (GIC) redistributor register.
+	#[cfg(feature = "macos_15_0_0")]
+	pub fn hv_gic_get_redistributor_reg(
+		vcpu: hv_vcpu_t,
+		reg: hv_gic_redistributor_reg_t,
+		value: *mut u64,
+	) -> hv_return_t;
 
 	/// Maps a region in the virtual address space of the current process into the guest physical address space of the VM.
 	pub fn hv_vm_map(

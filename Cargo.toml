@@ -5,7 +5,7 @@ authors = ["Stefan Lankes", "Saurav Sachidanand"]
 edition = "2021"
 
 license = "MIT"
-repository = "https://www.github.com/RWTH-OS/xhypervisor"
+repository = "https://github.com/RWTH-OS/xhypervisor"
 documentation = "https://docs.rs/xhypervisor/"
 readme = "README.md"
 description = " Hardware-accelerated virtualization on OS X"

@@ -29,9 +29,9 @@ fn vm_create() {
 		mem[EL1_USER_PAYLOAD_ADDRESS as usize..EL1_USER_PAYLOAD_ADDRESS as usize + sz]
 			.clone_from_slice(&el1_user_payload);
 		//map the vec at address 0
-		map_mem(mem, 0, MemPerm::ExecAndWrite).unwrap();
+		map_mem(mem, 0, MemPerm::ExecWrite).unwrap();
 
-		let vcpu = VirtualCpu::new().unwrap();
+		let vcpu = VirtualCpu::new(0).unwrap();
 
 		vcpu.write_register(Register::CPSR, 0x3c4).unwrap();
 		vcpu.write_register(Register::PC, EL1_USER_PAYLOAD_ADDRESS)
